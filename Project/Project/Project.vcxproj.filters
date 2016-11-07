@@ -24,6 +24,12 @@
     <ClCompile Include="gc.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="filePath.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="MySkeleton.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gcgraph.hpp">
@@ -36,6 +42,12 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="gc.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="filePath.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MySkeleton.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>

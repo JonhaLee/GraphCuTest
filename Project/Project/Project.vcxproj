@@ -147,14 +147,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="filePath.cpp" />
     <ClCompile Include="gc.cpp" />
     <ClCompile Include="Grabcut.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MySkeleton.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BinaryStream.h" />
     <ClInclude Include="gc.h" />
     <ClInclude Include="gcgraph.hpp" />
+    <ClInclude Include="filePath.h" />
+    <ClInclude Include="MySkeleton.h" />
     <ClInclude Include="precomp.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
