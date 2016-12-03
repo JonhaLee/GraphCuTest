@@ -10,33 +10,47 @@ filePath* filePath::getInstance(){
 }
 
 const std::string filePath::getColorPath(int number){
-	std::string colorfileName = "KinectScreenshot_RGB";
+	std::string fileName = "KinectScreenshot_RGB";
 	
-	std::string colorPath = filepath +dataName + "\\Color\\" + colorfileName + std::to_string(number) + ".bmp";
+	std::string path = filepath + dataName + "\\Color\\" + fileName + std::to_string(number) + ".bmp";
 	
-	return colorPath;
+	return path;
 }
 
 const std::string filePath::getBodyIndexPath(int number){
-	std::string colorfileName = "FileHRbodyIndex_";
+	std::string fileName = "FileHRbodyIndex_";
 
-	std::string colorPath = filepath + dataName + "\\HR_BodyIndex\\" + colorfileName + std::to_string(number) + ".bin";
+	std::string path = filepath + dataName + "\\HR_BodyIndex\\" + fileName + std::to_string(number) + ".bin";
 
-	return colorPath;
+	return path;
 }
 
 const std::string filePath::getMappPath(int number){
-	std::string colorfileName = "FileMapp_";
+	std::string fileName = "FileMapp_";
 
-	std::string colorPath = filepath + dataName + "\\Mapp\\" + colorfileName + std::to_string(number) + ".bin";
+	std::string path = filepath + dataName + "\\Mapp\\" + fileName + std::to_string(number) + ".bin";
 
-	return colorPath;
+	return path;
 }
 
 const std::string filePath::getDepthPath(int number){
-	std::string colorfileName = "Filedepth_";
+	std::string fileName = "Filedepth_";
 
-	std::string colorPath = filepath + dataName + "\\Depth\\" + colorfileName + std::to_string(number) + ".bin";
+	std::string path = filepath + dataName + "\\Depth\\" + fileName + std::to_string(number) + ".bin";
 
-	return colorPath;
+	return path;
+}
+
+const char* filePath::getSkeletonPath(){
+	std::string fileName = "Fileskeleton";
+
+	std::string path = filepath + dataName + "\\Body\\" + fileName + ".csv";
+
+	return _strdup(path.c_str());	
+}
+
+const std::string filePath::getResultPath(){
+	std::string path = filepath + dataName + "\\Result\\";
+
+	return path;
 }

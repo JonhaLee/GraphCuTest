@@ -5,7 +5,7 @@
 //////////////////////////////////////////////////////////////////////////
 //여기서 path 설정
 static std::string filepath = "C:\\Users\\Jonha\\Desktop\\";
-static std::string dataName = "Data8";
+static std::string dataName = "Data9";
 //////////////////////////////////////////////////////////////////////////
 
 class filePath{
@@ -19,4 +19,6 @@ public:
 	static const std::string getBodyIndexPath(int number);
 	static const std::string getMappPath(int number);
 	static const std::string getDepthPath(int number);
+	static const char* getSkeletonPath();
+	static const std::string getResultPath();
 };
