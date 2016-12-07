@@ -496,6 +496,4 @@ void my::GraphCut::graphCut(InputArray _img, InputOutputArray _mask, Rect rect,
 		constructGCGraph(img, mask, bgdGMM, fgdGMM, lambda, leftW, upleftW, upW, uprightW, graph, skeletonMap);
 		estimateSegmentation(graph, mask);
 	}
-
-	printf("내 그래프컷이다 끝");
 }
