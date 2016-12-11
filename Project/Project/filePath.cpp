@@ -1,12 +1,12 @@
 #include "filePath.h"
 
-filePath* filePath::instance = nullptr;
+filePath* filePath::instance_ = nullptr;
 
 filePath* filePath::getInstance(){
-	if (instance == nullptr)
-		instance = new filePath();
+	if (instance_ == nullptr)
+		instance_ = new filePath();
 
-	return instance;
+	return instance_;
 }
 
 const std::string filePath::getColorPath(int number){

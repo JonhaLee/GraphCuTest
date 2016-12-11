@@ -448,7 +448,6 @@ my::GraphCut::GraphCut(){
 
 }
 void my::GraphCut::graphCut(InputArray _img, InputOutputArray _mask, Rect rect,
-	InputArray _skMap,
 	InputOutputArray _bgdModel, InputOutputArray _fgdModel,
 	int iterCount, int mode,
 	Mat& skeletonMap)

@@ -11,7 +11,7 @@ static std::string dataName = "Data9";
 class filePath{
 private:
 	filePath(){}
-	static filePath* instance;
+	static filePath* instance_;
 
 public:
 	static filePath* getInstance();	
