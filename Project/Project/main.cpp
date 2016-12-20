@@ -1,4 +1,4 @@
-#include "opencv2/imgproc/imgproc.hpp"
+ï»¿#include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/core/core.hpp"
 
@@ -7,12 +7,12 @@
 #include "gc.h"
 #include "filePath.h"
 
-//Å×½ºÆ®¸¦ À§ÇÑ ÄÚµå
+//í…ŒìŠ¤íŠ¸ë¥¼ ìœ„í•œ ì½”ë“œ
 #include <time.h>
 
 using namespace cv;
 
-//»ó¼öµé
+//ìƒìˆ˜ë“¤
 #define IMAGE_WIDTH 1920
 #define IMAGE_HEIGHT 1080
 #define PIE 3.1419
@@ -23,274 +23,571 @@ const static int kJointFromKinectV2 = 25;
 bool isBody[kTotal_BodyIndex];
 
 
-//File·ÎºÎÅÍ Data¸¦ ÀĞ¾î¿À´Â ÇÔ¼öµé
-BYTE* loadBodyIndexFile(int frameNumber);
-short* loadMappingFile(int frameNumber);
-BYTE* loadDepthImageFile(int frameNumber);
-Point2i** loadSkeletonFile(int frameNumber);
+//Fileë¡œë¶€í„° Dataë¥¼ ì½ì–´ì˜¤ëŠ” í•¨ìˆ˜ë“¤
+//BYTE* loadBodyIndexFile(int frameNumber);
+void loadBodyIndexFile(BYTE*& bodyIndexData, int frameNumber);
+//short* loadMappingFile(int frameNumber);
+void loadMappingFile(short*& mappingDats, int frameNumber);
+//BYTE* loadDepthImageFile(int frameNumber);
+void loadDepthImageFile(BYTE*& depthData, int frameNumber);
+//Point2i** loadSkeletonFile(int frameNumber);
+void loadSkeletonFile(Point2i**& skeletonDatas_origin, int frameNumber);
 
 
-//Seed¸¦ ÀÔ·ÂÇÏ´Â ÇÔ¼öµé
+//Seedë¥¼ ì…ë ¥í•˜ëŠ” í•¨ìˆ˜ë“¤
 void addSeedByBodyIndex(Mat* mask, BYTE* bodyIndexData);
 void addSeedBySkeleton(Mat* mask, BYTE** skeletonData);
 
 
-//Skeleton Á¤º¸ °¡°ø ÇÔ¼öµé
-BYTE** createSkeletonData(int frameNumber, Point2i** skeletonDatas_origin);
-Mat* createSkeletonWeightMap(int frame, BYTE** skeletonDatas);
+//Mat* createDistanceMaps(BYTE** skeletonDataMaps);
+void createDistanceMaps(Mat*& outputInput, BYTE** skeletonDataMaps);
+vector<vector<Point2i>> getSkeletonLinesAround(int jointNumber, Point2i* skeletonJointPosition);
+
+
+//Skeleton ì •ë³´ ê°€ê³µ í•¨ìˆ˜ë“¤
+//BYTE** createSkeletonData(int frameNumber, Point2i** skeletonDatas_origin, Point2i** skeletonDatas_hd);
+void createSkeletonData(BYTE**& skeletonDatasMap, int frameNumber, Point2i** skeletonDatas_origin, Point2i** skeletonDatas_hd);
+//double** createSkeletonWeightMap(int frame, Point2i** skeletonDatas_hd, Mat* distanceMaps);
+//double** createSkeletonWeightMap(int frame, Point2i** skeletonDatas_hd, Mat* distanceMaps, int head_sigma, int foot_sigma, int sigma, int weight);
+void createSkeletonWeightMap(double**& skeletonMaps, int frame, Point2i** skeletonDatas_hd, Mat* distanceMaps, int head_sigma, int foot_sigma, int sigma, int weight);
 void CreateSkeletonLines(Point2i* jointPoints, int width, int height, int stroke, BYTE* skeletonMap);
 
 
-//À¯Æ¿¸®Æ¼ ÇÔ¼öµé
+//ìœ í‹¸ë¦¬í‹° í•¨ìˆ˜ë“¤
 Point2i mappingLowToHigh(Point2i point, short* mappingData);
 void expandPixelBy(int x, int y, int width, int height, int stroke, BYTE* skeletonDatas);
 void drawLineBy(Point2i start, Point2i end, int width, int height, int stroke, BYTE* skeletonDatas);
+vector<Point2i> getLineFromTwoPoint(Point2i point1, Point2i point2);
 
 const char* getfield(char* line, int num);
+int getL1DistanceTwoPoint(Point2i left, Point2i right);
+double getEuclideanDistanceTwoPoint(Point2i left, Point2i right);
+
+int getCloestJointNumber(Point2i point, Point2i* skeletonJointPosition);
 
 
 
 int main(){
 	/**/printf("OpenCV Version : %s\n\n", CV_VERSION);
 
-	//TEST: ¼Ò¿ä½Ã°£ ÃøÁ¤(begin)//////////////
-	clock_t begin, end;
-	begin = clock();
-	//////////////////////////////////////////
 
 
-	//Ã³¸®ÇÏ°íÀÚ ÇÏ´Â ¿µ»óÀÇ frameÀ» ÀÔ·Â(¹İº¹À» ´ëºñÇØ µû·Î »©³õÀ½)
-	const int kFrameNumber = 70;
+	int sigma;
+	int weight;
+
+	for (int head_sigma = 8; head_sigma <= 200; head_sigma+=10){
+		for (int foot_sigma = 1; foot_sigma <= 200; foot_sigma+=10){
+			for (int sigma = 10; sigma <= 50; sigma+=2){
+				for (int weight = 1; weight <= 100; weight+=5){
+					//TEST: ì†Œìš”ì‹œê°„ ì¸¡ì •(begin)//////////////
+					clock_t begin, end;
+					begin = clock();
+					//////////////////////////////////////////
 
 
-	//BodyIndexData¸¦ ¾ò±â À§ÇØ local filesÀ» ÀĞ¾î¿Â´Ù.
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, BodyIndexData ·Îµå ½ÃÀÛ\n", kFrameNumber);
-	BYTE* bodyIndexData = loadBodyIndexFile(kFrameNumber);
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, BodyIndexData ·Îµå ¿Ï·á\n", kFrameNumber);
-
-	/*
-	GraphCut¿¡ »ç¿ë µÉ Seed(foreground or background)¸¦ ÀÔ·Â
-	kinect¿¡¼­ Á¦°øÇØÁÖ´Â BodyIndex °³¼ö¸¸Å­(ÇöÀç´Â 6) GraphCutÀ» µ¹¸®±â À§ÇØ °¢°¢ÀÇ Seed Mask¸¦ »ı¼º
-	±âº»ÀûÀ¸·Î ¸ğµç Seed¸¦ PR_Background·Î ÁÖ¾îÁØ ´ÙÀ½¿¡, µÚ¿¡¼­ PR_Foreground¿Í Foreground¸¦ ´Ù½Ã ÀÔ·Â
-	*/
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, BodyIndexData Seed·Î ³Ö±â ½ÃÀÛ\n", kFrameNumber);
-	Mat* GC_Masks = new Mat[kTotal_BodyIndex];
-	for (int i = 0; i < kTotal_BodyIndex; i++){
-		GC_Masks[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(GC_PR_BGD));
-	}	
-	addSeedByBodyIndex(GC_Masks, bodyIndexData);	
-	//¸Ş¸ğ¸® ÇØÁ¦
-	delete[] bodyIndexData;
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, BodyIndexData Seed·Î ³Ö±â ¿Ï·á\n", kFrameNumber);
+					//ì²˜ë¦¬í•˜ê³ ì í•˜ëŠ” ì˜ìƒì˜ frameì„ ì…ë ¥(ë°˜ë³µì„ ëŒ€ë¹„í•´ ë”°ë¡œ ë¹¼ë†“ìŒ)
+					const int kFrameNumber = 70;
 
 
-	/*
-	½ºÄÌ·¹Åæ Á¤º¸ ¼³Á¤ºÎºĞ
-	½ºÄÌ·¹Åæ joint Á¤º¸¸¦ ¾ò±â À§ÇØ local file(.csv)·ÎºÎÅÍ Á¤º¸¸¦ ¾ò¾î¿À°í
-	ÇØ´ç joint Á¤º¸¸¦ ¹ÙÅÁÀ¸·Î »À´ë(line)±îÁö »ı¼ºÇÏ´Â ºÎºĞ
-	*/	
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, ½ºÄÌ·¹Åæ csv ÆÄÀÏ ·Îµå ½ÃÀÛ\n", kFrameNumber);
-	Point2i** skeletonDatas_origin = loadSkeletonFile(kFrameNumber);
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, ½ºÄÌ·¹Åæ csv ÆÄÀÏ ·Îµå ¿Ï·á\n", kFrameNumber);
+					//BodyIndexDataë¥¼ ì–»ê¸° ìœ„í•´ local filesì„ ì½ì–´ì˜¨ë‹¤.
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, BodyIndexData ë¡œë“œ ì‹œì‘\n", kFrameNumber);
+					BYTE* bodyIndexData;
+					loadBodyIndexFile(bodyIndexData, kFrameNumber);
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, BodyIndexData ë¡œë“œ ì™„ë£Œ\n", kFrameNumber);
 
-
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, ½ºÄÌ·¹Åæ Data »ı¼º ½ÃÀÛ\n", kFrameNumber);
-	BYTE** skeletonDataMaps = createSkeletonData(kFrameNumber, skeletonDatas_origin);
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, ½ºÄÌ·¹Åæ Data »ı¼º ¿Ï·á\n", kFrameNumber);
-
-		
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, SkeletonData·Î ½Ãµå ³Ö±â ½ÃÀÛ\n", kFrameNumber);
-	addSeedBySkeleton(GC_Masks, skeletonDataMaps);
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, SkeletonData·Î ½Ãµå ³Ö±â ¿Ï·á\n", kFrameNumber);
-
-
-	//ÇöÀç SkeletonWiethMapÀ» ¸¸µå´Â ºÎºĞ
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, SkeletonData·Î °¡ÁßÄ¡ ¸Ê »ı¼º ½ÃÀÛ\n", kFrameNumber);
-	Mat* skeletonMaps = createSkeletonWeightMap(kFrameNumber, skeletonDataMaps);
-	/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, SkeletonData·Î °¡ÁßÄ¡ ¸Ê »ı¼º ¿Ï·á\n", kFrameNumber);
-		
-
-
-	//ÀÔ·Â ¿µ»ó
-	Mat con_img = imread(filePath::getInstance()->getColorPath(kFrameNumber));
-
-	
-	/*
-	ÇÊ¿äÇÑ image ÆÄÀÏµéÀ» ¸¸µå´Â ºÎºĞ
-	*/
-
-	//ÀÌ¹ÌÁö ÆÄÀÏ ¸¶Áö¸·¿¡ ³¯Â¥¿Í ½Ã°£À» Áı¾î³Ö±â À§ÇÔ
-	struct tm* datetime;
-	time_t t;
-	t = time(NULL);
-	datetime = localtime(&t);
-
-	std::string date = 
-		to_string(datetime->tm_year + 1900) + "-"
-		+ to_string(datetime->tm_mon + 1) + "-"
-		+ to_string(datetime->tm_mday) + "-"
-		+ to_string(datetime->tm_hour) + "-"
-		+ to_string(datetime->tm_min) + "-"
-		+ to_string(datetime->tm_sec);
-
-	//ÀúÀåÀ» À§ÇÑ path
-	std::string Spath_inputImage			= filePath::getInstance()->getResultPath() + "input" + to_string(kFrameNumber) + "_" + date + ".jpg";
-	std::string Spath_depthNskeletonImage	= filePath::getInstance()->getResultPath() + "depth_skeleton" + to_string(kFrameNumber) + "_" + date + ".jpg";
-	std::string Spath_HRskeletonImage = filePath::getInstance()->getResultPath() + "HRskeleton" + to_string(kFrameNumber) + "_" + date + ".jpg";
-
-		
-	//±íÀÌ °ª + skeleton Ã³¸® ºÎºĞ
-	BYTE* depthData		= loadDepthImageFile(kFrameNumber);
-	BYTE* skeleton_origin_map = new BYTE[424 * 512];
-
-	for (int i = 0; i < kTotal_BodyIndex; i++){
-		if (isBody[i]){			
-			CreateSkeletonLines(skeletonDatas_origin[i], 512, 424, 3, skeleton_origin_map);
-		}
-	}
-		
-	Mat depthNskeleton(424, 512, CV_8UC1, Scalar(0));
-
-	for (int row = 0; row < 424; row++){
-		for (int col = 0; col < 512; col++){
-			depthNskeleton.at<uchar>(row, col) = depthData[row * 512 + col];
-			if (skeleton_origin_map[row * 512 + col] == 1){				
-				depthNskeleton.at<uchar>(row, col) = 0;
-			}
-
-		}
-	}
-	
-	Mat HRSkeleton(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(255));
-	for (int row = 0; row < IMAGE_HEIGHT; row++){
-		for (int col = 0; col < IMAGE_WIDTH; col++){
-			for (int i = 0; i < kTotal_BodyIndex; i++){
-				if (skeletonDataMaps[i][row * IMAGE_WIDTH + col] == 1){
-					//printf("%d * 512 + %d\n", row, col);
-					HRSkeleton.at<uchar>(row, col) = 0;
-				}
-			}
-		}
-	}
-
-
-	//ÀúÀåÀ» ÇÏ´Â ÇÔ¼ö
-	imwrite(Spath_inputImage.c_str(), con_img);			//ÀÔ·Â ¿µ»ó
-	imwrite(Spath_depthNskeletonImage.c_str(), depthNskeleton);	//±íÀÌ °ª + skeleton
-	imwrite(Spath_HRskeletonImage.c_str(), HRSkeleton);
-	
-	//¸Ş¸ğ¸® ÇØÁ¦
-	delete[] depthData;
-	delete[] skeleton_origin_map;
-
-
-
-
-	//ÁÖ¾îÁø Á¤º¸¸¦ Åä´ë·Î GraphCutÀ» µ¹¸®´Â ºÎºĞ
-
-	for (int i = 0; i < kTotal_BodyIndex; i++){
-		if (isBody[i]){
-			/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, %d¹øÂ° BodyIndex GraphCut ½ÃÀÛ\n", kFrameNumber, i);
-			
-			//GrabCut¿¡ »ç¿ëµÇ´Â º¯¼öµé
-			//¿©±â¼­´Â GrabCutÀ» GraphCutÃ³·³ ÀÌ¿ëÇÏ±â ¶§¹®¿¡ ¾Æ·¡ º¯¼öµéÀÇ ¸®ÅÏ°ªµéÀ» µû·Î »ç¿ëÇÏÁö ¾ÊÀ½.
-			my::GraphCut gc;
-			Mat back, fore;	//¸ğµ¨(ÃÊ±â »ç¿ë)
-			Rect rect(10, 10, 100, 100);
-
-			//½ÇÁ¦·Î´Â GraphCutÃ³·³ ÀÛµ¿
-			gc.graphCut(con_img,		//ÀÔ·Â¿µ»ó		
-				GC_Masks[i],			//ºĞÇÒ ¸¶½ºÅ©, ÇØ´ç ¸¶½ºÅ©ÀÇ Àü°æ°ú ¹è°æÀ¸·Î GraphCut ¼öÇà
-				rect,					//Àü°æÀ» Æ÷ÇÔÇÏ´Â Á÷»ç°¢Çü, ¿©±â¼­´Â MASK ¸ğµå¸¦ »ç¿ëÇÔÀ¸·Î rectÀÇ °ªÀº ÀüÇô »ç¿ëÇÏÁö ¾Ê´Â´Ù.
-				back, fore,				//¸ğµ¨
-				1,						//¹İº¹È½¼ö
-				GC_INIT_WITH_MASK,		//Mask¸¦ »ç¿ëÇÏ´Â ¸ğµå ¼±ÅÃ
-				skeletonMaps[i]);		//Skeleton Weight Map
-
-
-			/*
-			GraphCutÀÇ °á°ú°ªÀ¸·Î ³ª¿À´Â GC_Masks¿¡¼­ ¿øÇÏ´Â °á°ú°ªÀ» »Ì¾Æ¼­(compareÀ» ÅëÇØ) ÀúÀåÇÏ±â À§ÇÑ º¯¼ö
-			*/
-			Mat fgd_result, pr_fgd_result;
-
-			/*
-			°á°ú¿µ»óµéÀ» ÀÌ¹ÌÁö ÆÄÀÏ·Î ÀúÀåÇÏ±â À§ÇÑ º¯¼öµé
-			*/
-			//Mat foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
-			//Mat pr_foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
-			Mat final_result(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
-
-			//°á°ú ¿µ»ó¿¡¼­ GC_FGDÀÎ ÇÈ¼¿µé¸¸ fgd_result¿¡ ÀúÀå
-			compare(GC_Masks[i], cv::GC_FGD, fgd_result, cv::CMP_EQ);
-			//±× ÈÄ¿¡ ÀÔ·Â ¿µ»ó°ú ºñ±³ÇÏ¿© foreground¶ó´Â º¯¼ö¿¡ ´ëÀÀµÇ´Â ÄÃ·¯ °ªÀ» ÀúÀå
-			//Áï, GC_FGD¶ó°í ³ª¿Â °á°ú°ª À§Ä¡ÀÇ ÄÃ·¯ ¿µ»ó¸¸ ÀúÀå
-			//con_img.copyTo(foreground, fgd_result);
-
-			//¸¶Âù°¡Áö·Î GC_PR_FGD¿¡ ´ëÇØ ÁøÇà
-			compare(GC_Masks[i], GC_PR_FGD, pr_fgd_result, CMP_EQ);
-			//con_img.copyTo(pr_foreground, pr_fgd_result);
-
-			//ÃÖÁ¾ °á°ú ÆÄÀÏ(final_result)¿¡ fgd, pr_fgdÀÇ ÄÃ·¯ ¿µ»ó°ªÀ» ÀúÀå
-			con_img.copyTo(final_result, fgd_result);
-			con_img.copyTo(final_result, pr_fgd_result);
-
-			//final_result ¿µ»ó°ú skeletonDataÀÇ °ªÀ» ÇÕÃÄ¼­ ÄÃ·¯ ¿µ»ó À§¿¡ skeleton lineÀÌ º¸ÀÌ°Ô Ç¥½ÃÇÏ´Â ÀÛ¾÷
-			for (int row = 0; row < 1080; row++){
-				for (int col = 0; col < 1920; col++){
-					if (skeletonDataMaps[i][row * 1920 + col] == 1){
-						final_result.at<Vec3b>(row, col)[0] = 255;
-						final_result.at<Vec3b>(row, col)[1] = 255;
-						final_result.at<Vec3b>(row, col)[2] = 0;
-
+					/*
+					GraphCutì— ì‚¬ìš© ë  Seed(foreground or background)ë¥¼ ì…ë ¥
+					kinectì—ì„œ ì œê³µí•´ì£¼ëŠ” BodyIndex ê°œìˆ˜ë§Œí¼(í˜„ì¬ëŠ” 6) GraphCutì„ ëŒë¦¬ê¸° ìœ„í•´ ê°ê°ì˜ Seed Maskë¥¼ ìƒì„±
+					ê¸°ë³¸ì ìœ¼ë¡œ ëª¨ë“  Seedë¥¼ PR_Backgroundë¡œ ì£¼ì–´ì¤€ ë‹¤ìŒì—, ë’¤ì—ì„œ PR_Foregroundì™€ Foregroundë¥¼ ë‹¤ì‹œ ì…ë ¥
+					*/
+					Mat* GSEG_Masks = new Mat[kTotal_BodyIndex];
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						GSEG_Masks[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(GC_BGD));
 					}
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, BodyIndexData Seedë¡œ ë„£ê¸° ì‹œì‘\n", kFrameNumber);
+					addSeedByBodyIndex(GSEG_Masks, bodyIndexData);
+					//ë°˜ë³µìš© ì¶”ê°€
+					delete[] bodyIndexData;
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, BodyIndexData Seedë¡œ ë„£ê¸° ì™„ë£Œ\n", kFrameNumber);
+
+					Mat* Prop_Masks = new Mat[kTotal_BodyIndex];
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						Prop_Masks[i] = GSEG_Masks[i].clone();
+					}
+
+
+					/*
+					ìŠ¤ì¼ˆë ˆí†¤ ì •ë³´ ì„¤ì •ë¶€ë¶„
+					ìŠ¤ì¼ˆë ˆí†¤ joint ì •ë³´ë¥¼ ì–»ê¸° ìœ„í•´ local file(.csv)ë¡œë¶€í„° ì •ë³´ë¥¼ ì–»ì–´ì˜¤ê³ 
+					í•´ë‹¹ joint ì •ë³´ë¥¼ ë°”íƒ•ìœ¼ë¡œ ë¼ˆëŒ€(line)ê¹Œì§€ ìƒì„±í•˜ëŠ” ë¶€ë¶„
+					*/
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, ìŠ¤ì¼ˆë ˆí†¤ csv íŒŒì¼ ë¡œë“œ ì‹œì‘\n", kFrameNumber);
+					Point2i** skeletonDatas_origin;
+					loadSkeletonFile(skeletonDatas_origin, kFrameNumber);
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, ìŠ¤ì¼ˆë ˆí†¤ csv íŒŒì¼ ë¡œë“œ ì™„ë£Œ\n", kFrameNumber);
+
+
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, ìŠ¤ì¼ˆë ˆí†¤ Data ìƒì„± ì‹œì‘\n", kFrameNumber);
+					Point2i** skeletonDatas_hd = new Point2i*[kTotal_BodyIndex];
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						skeletonDatas_hd[i] = new Point2i[kJointFromKinectV2];
+					}
+					BYTE** skeletonDataMaps;
+					createSkeletonData(skeletonDataMaps, kFrameNumber, skeletonDatas_origin, skeletonDatas_hd);
+					//ë°˜ë³µìš© ì¶”ê°€
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						delete[] skeletonDatas_origin[i];
+					}
+					delete[] skeletonDatas_origin;
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, ìŠ¤ì¼ˆë ˆí†¤ Data ìƒì„± ì™„ë£Œ\n", kFrameNumber);
+
+
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, SkeletonDataë¡œ ì‹œë“œ ë„£ê¸° ì‹œì‘\n", kFrameNumber);
+					addSeedBySkeleton(Prop_Masks, skeletonDataMaps);
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, SkeletonDataë¡œ ì‹œë“œ ë„£ê¸° ì™„ë£Œ\n", kFrameNumber);
+
+
+
+					//Distance Map ë§Œë“œëŠ” ë¶€ë¶„
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, Distance ë§µ ìƒì„± ì‹œì‘\n", kFrameNumber);
+					//ushort** distanceMaps = createDistanceMaps(skeletonDataMaps);
+					Mat* distanceMaps;
+					createDistanceMaps(distanceMaps, skeletonDataMaps);
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, Distance ë§µ ìƒì„± ì™„ë£Œ\n", kFrameNumber);
+
+
+					//í˜„ì¬ SkeletonWiethMapì„ ë§Œë“œëŠ” ë¶€ë¶„
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, SkeletonDataë¡œ ê°€ì¤‘ì¹˜ ë§µ ìƒì„± ì‹œì‘\n", kFrameNumber);
+					double** weightMaps;
+					createSkeletonWeightMap(weightMaps, kFrameNumber, skeletonDatas_hd, distanceMaps, head_sigma, foot_sigma, sigma, weight);
+					//ë°˜ë³µìš© ì¶”ê°€
+					for (int i = 0; i < kTotal_BodyIndex; i++){						
+						delete[] skeletonDatas_hd[i];
+					}
+					delete[] skeletonDatas_hd;
+					//ë°˜ë³µìš© ì¶”ê°€
+
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						distanceMaps[i].refcount = 0;
+						distanceMaps[i].release();
+					}
+					
+					delete[] distanceMaps;
+					/**/printf("%dë²ˆì§¸ í”„ë ˆì„, SkeletonDataë¡œ ê°€ì¤‘ì¹˜ ë§µ ìƒì„± ì™„ë£Œ\n", kFrameNumber);
+
+
+
+
+					//ì…ë ¥ ì˜ìƒ
+					Mat con_img = imread(filePath::getInstance()->getColorPath(kFrameNumber));
+
+#pragma region drawImages
+					/*
+					í•„ìš”í•œ image íŒŒì¼ë“¤ì„ ë§Œë“œëŠ” ë¶€ë¶„
+					*/
+
+					////ì´ë¯¸ì§€ íŒŒì¼ ë§ˆì§€ë§‰ì— ë‚ ì§œì™€ ì‹œê°„ì„ ì§‘ì–´ë„£ê¸° ìœ„í•¨
+					//struct tm* datetime;
+					//time_t t;
+					//t = time(NULL);
+					//datetime = localtime(&t);
+
+					//std::string date = 
+					//	to_string(datetime->tm_year + 1900) + "-"
+					//	+ to_string(datetime->tm_mon + 1) + "-"
+					//	+ to_string(datetime->tm_mday) + "-"
+					//	+ to_string(datetime->tm_hour) + "-"
+					//	+ to_string(datetime->tm_min) + "-"
+					//	+ to_string(datetime->tm_sec);
+
+					////ì €ì¥ì„ ìœ„í•œ path
+					//std::string Spath_inputImage			= filePath::getInstance()->getResultPath() + date + "_Input" + to_string(kFrameNumber) + "_" +  ".jpg";
+					//std::string Spath_depthNskeletonImage	= filePath::getInstance()->getResultPath() + date + "_Depth_skeleton" + to_string(kFrameNumber) + "_" +  ".jpg";
+					//std::string Spath_HRskeletonImage		= filePath::getInstance()->getResultPath() + date + "_HRskeleton" + to_string(kFrameNumber) + "_" + ".jpg";
+
+					//	
+					////ê¹Šì´ ê°’ + skeleton ì²˜ë¦¬ ë¶€ë¶„
+					//BYTE* depthData;
+					//loadDepthImageFile(depthData, kFrameNumber);
+					//BYTE* skeleton_origin_map = new BYTE[424 * 512];
+
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){			
+					//		CreateSkeletonLines(skeletonDatas_origin[i], 512, 424, 3, skeleton_origin_map);
+					//	}
+					//}
+					//	
+					//Mat img_depthNskeleton(424, 512, CV_8UC1, Scalar(0));
+
+					//for (int row = 0; row < 424; row++){
+					//	for (int col = 0; col < 512; col++){
+					//		img_depthNskeleton.at<uchar>(row, col) = depthData[row * 512 + col];
+					//		if (skeleton_origin_map[row * 512 + col] == 1){				
+					//			img_depthNskeleton.at<uchar>(row, col) = 0;
+					//		}
+
+					//	}
+					//}
+					//
+					//Mat img_HRSkeleton(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(255));
+					//for (int row = 0; row < IMAGE_HEIGHT; row++){
+					//	for (int col = 0; col < IMAGE_WIDTH; col++){
+					//		for (int i = 0; i < kTotal_BodyIndex; i++){
+					//			if (skeletonDataMaps[i][row * IMAGE_WIDTH + col] == 1){
+					//				img_HRSkeleton.at<uchar>(row, col) = 0;
+					//			}
+					//		}
+					//	}
+					//}
+
+					//Mat* img_GSEGmask = new Mat[kTotal_BodyIndex];
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		img_GSEGmask[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(255));
+
+					//		for (int row = 0; row < IMAGE_HEIGHT; row++){
+					//			for (int col = 0; col < IMAGE_WIDTH; col++){
+					//				if (GSEG_Masks[i].at<uchar>(row, col) == GC_BGD)
+					//					img_GSEGmask[i].at<uchar>(row, col) = 0;
+					//				else if (GSEG_Masks[i].at<uchar>(row, col) == GC_PR_BGD)
+					//					img_GSEGmask[i].at<uchar>(row, col) = 100;
+					//				else if (GSEG_Masks[i].at<uchar>(row, col) == GC_PR_FGD)
+					//					img_GSEGmask[i].at<uchar>(row, col) = 200;
+					//				else if (GSEG_Masks[i].at<uchar>(row, col) == GC_FGD)
+					//					img_GSEGmask[i].at<uchar>(row, col) = 255;
+					//			}
+					//		}
+					//	}
+					//}
+
+					//Mat* img_Propmask = new Mat[kTotal_BodyIndex];
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		img_Propmask[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(255));
+
+					//		for (int row = 0; row < IMAGE_HEIGHT; row++){
+					//			for (int col = 0; col < IMAGE_WIDTH; col++){
+					//				if (Prop_Masks[i].at<uchar>(row, col) == GC_BGD)
+					//					img_Propmask[i].at<uchar>(row, col) = 0;
+					//				else if (Prop_Masks[i].at<uchar>(row, col) == GC_PR_BGD)
+					//					img_Propmask[i].at<uchar>(row, col) = 100;
+					//				else if (Prop_Masks[i].at<uchar>(row, col) == GC_PR_FGD)
+					//					img_Propmask[i].at<uchar>(row, col) = 200;
+					//				else if (Prop_Masks[i].at<uchar>(row, col) == GC_FGD)
+					//					img_Propmask[i].at<uchar>(row, col) = 255;
+					//			}
+					//		}
+					//	}
+					//}
+
+					//Mat* img_bodyIndex = new Mat[kTotal_BodyIndex];
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		img_bodyIndex[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC3, Scalar(255, 255, 255));
+
+					//		for (int row = 0; row < IMAGE_HEIGHT; row++){
+					//			for (int col = 0; col < IMAGE_WIDTH; col++){
+					//				if (bodyIndexData[row * (IMAGE_WIDTH * 2) + (col * 2)] == i){
+					//					img_bodyIndex[i].at<Vec3b>(row, col) = con_img.at<Vec3b>(row, col);
+					//				}
+					//			}
+					//		}
+					//	}
+					//}
+
+					//Mat* img_weightMaps = new Mat[kTotal_BodyIndex];
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		img_weightMaps[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(0));
+
+					//		for (int row = 0; row < IMAGE_HEIGHT; row++){
+					//			for (int col = 0; col < IMAGE_WIDTH; col++){
+					//				//img_weightMaps[i].at<uchar>(row, col) = weightMaps[i][row * IMAGE_WIDTH + col] * (double)10000;	//ê°€ì‹œí™”í•˜ê¸° ìœ„í•´ ê°’ì„ ì¡°ì •
+					//				img_weightMaps[i].at<uchar>(row, col) = weightMaps[i][row * IMAGE_WIDTH + col] * (double)255;	//ê°€ì‹œí™”í•˜ê¸° ìœ„í•´ ê°’ì„ ì¡°ì •
+					//				if (skeletonDataMaps[i][row * IMAGE_WIDTH + col] == 1){
+					//					img_weightMaps[i].at<uchar>(row, col) = 255;
+					//				}
+					//			}
+					//		}
+					//	}
+					//}
+					////ì €ì¥ì„ í•˜ëŠ” í•¨ìˆ˜
+					//imwrite(Spath_inputImage.c_str(), con_img);					//ì…ë ¥ ì˜ìƒ
+					//imwrite(Spath_depthNskeletonImage.c_str(), img_depthNskeleton);	//ê¹Šì´ ê°’ + skeleton
+					//imwrite(Spath_HRskeletonImage.c_str(), img_HRSkeleton);			//HRí•´ìƒë„ ìŠ¤ì¼ˆë ˆí†¤ ì˜ìƒ
+
+					//
+					////Mask ê°’ ì˜ìƒ
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		std::string Spath_GSEGmaskimage = filePath::getInstance()->getResultPath() + date + "_GSEG_MASK" + to_string(kFrameNumber) + to_string(i) + "_" + ".jpg";
+					//		imwrite(Spath_GSEGmaskimage, img_GSEGmask[i]);
+
+					//		std::string Spath_Propmaskimage = filePath::getInstance()->getResultPath() + date + "_Prop_MASK" + to_string(kFrameNumber) + to_string(i) + "_" + ".jpg";
+					//		imwrite(Spath_Propmaskimage, img_Propmask[i]);
+					//	}
+					//}
+					//
+
+
+					////BodyIndexë¥¼ í”„ë¡œì ì…˜(ì»¬ëŸ¬ê°’ìœ¼ë¡œ)í•œ ì˜ìƒ
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		std::string Spath_bodyIndeximage = filePath::getInstance()->getResultPath() + date + "_Projection" + to_string(kFrameNumber) + to_string(i) + "_" + ".jpg";
+					//		imwrite(Spath_bodyIndeximage, img_bodyIndex[i]);
+					//	}
+					//}
+
+					//
+					////Distance Map
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		std::string Spath_distanceMapsimage = filePath::getInstance()->getResultPath() + date + "_Distance" + to_string(kFrameNumber) + to_string(i) + "_" + ".jpg";	
+					//		imwrite(Spath_distanceMapsimage, distanceMaps[i]);
+					//	}
+					//}
+					//
+
+					////Weight Map
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	if (isBody[i]){
+					//		std::string Spath_weightMapsimage = filePath::getInstance()->getResultPath() + date + "_WeightMap" + to_string(kFrameNumber) + to_string(i) + "_" + ".jpg";
+					//		imwrite(Spath_weightMapsimage, img_weightMaps[i]);
+					//	}
+					//}
+
+					//
+					////ë©”ëª¨ë¦¬ í•´ì œ		
+					//delete[] img_GSEGmask;
+					//delete[] img_Propmask;
+
+					//for (int i = 0; i < kTotal_BodyIndex; i++){
+					//	delete[] skeletonDatas_hd[i];
+					//}
+					//delete[] skeletonDatas_hd;
+					//delete[] bodyIndexData;
+					//delete[] depthData;
+					//delete[] skeleton_origin_map;
+					//delete[] img_bodyIndex;
+					//delete[] distanceMaps;
+
+					//delete[] img_weightMaps;
+
+
+#pragma endregion
+
+
+					//GSEG, ê·¸ë˜í”„ ì»· ê¸°ë°˜ bodyindexì •ë³´ë§Œ ì´ìš©í•˜ëŠ” ê¸°ì´ˆì ì¸ ë°©ë²•
+#pragma region GSEG Method	
+					//	for (int i = 0; i < kTotal_BodyIndex; i++){
+					//		if (isBody[i]){
+					//			/**/printf("%dë²ˆì§¸ í”„ë ˆì„, %dë²ˆì§¸ BodyIndexì— ëŒ€í•´ GSEG ë°©ì‹ ì‹œì‘\n", kFrameNumber, i);
+					//
+					//			//GrabCutì— ì‚¬ìš©ë˜ëŠ” ë³€ìˆ˜ë“¤
+					//			//ì—¬ê¸°ì„œëŠ” GrabCutì„ GraphCutì²˜ëŸ¼ ì´ìš©í•˜ê¸° ë•Œë¬¸ì— ì•„ë˜ ë³€ìˆ˜ë“¤ì˜ ë¦¬í„´ê°’ë“¤ì„ ë”°ë¡œ ì‚¬ìš©í•˜ì§€ ì•ŠìŒ.
+					//			
+					//			Mat back, fore;	//ëª¨ë¸(ì´ˆê¸° ì‚¬ìš©)
+					//			Rect rect(10, 10, 100, 100);
+					//
+					//			//ì‹¤ì œë¡œëŠ” GraphCutì²˜ëŸ¼ ì‘ë™
+					//			grabCut(con_img,		//ì…ë ¥ì˜ìƒ		
+					//				GSEG_Masks[i],			//ë¶„í•  ë§ˆìŠ¤í¬, í•´ë‹¹ ë§ˆìŠ¤í¬ì˜ ì „ê²½ê³¼ ë°°ê²½ìœ¼ë¡œ GraphCut ìˆ˜í–‰
+					//				rect,					//ì „ê²½ì„ í¬í•¨í•˜ëŠ” ì§ì‚¬ê°í˜•, ì—¬ê¸°ì„œëŠ” MASK ëª¨ë“œë¥¼ ì‚¬ìš©í•¨ìœ¼ë¡œ rectì˜ ê°’ì€ ì „í˜€ ì‚¬ìš©í•˜ì§€ ì•ŠëŠ”ë‹¤.
+					//				back, fore,				//ëª¨ë¸
+					//				1,						//ë°˜ë³µíšŸìˆ˜
+					//				GC_INIT_WITH_MASK);		//Maskë¥¼ ì‚¬ìš©í•˜ëŠ” ëª¨ë“œ ì„ íƒ
+					//
+					//
+					//			/*
+					//			GraphCutì˜ ê²°ê³¼ê°’ìœ¼ë¡œ ë‚˜ì˜¤ëŠ” GC_Masksì—ì„œ ì›í•˜ëŠ” ê²°ê³¼ê°’ì„ ë½‘ì•„ì„œ(compareì„ í†µí•´) ì €ì¥í•˜ê¸° ìœ„í•œ ë³€ìˆ˜
+					//			*/
+					//			Mat fgd_result, pr_fgd_result;
+					//
+					//			/*
+					//			ê²°ê³¼ì˜ìƒë“¤ì„ ì´ë¯¸ì§€ íŒŒì¼ë¡œ ì €ì¥í•˜ê¸° ìœ„í•œ ë³€ìˆ˜ë“¤
+					//			*/
+					//			//Mat foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+					//			//Mat pr_foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+					//			Mat final_result(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+					//
+					//			//ê²°ê³¼ ì˜ìƒì—ì„œ GC_FGDì¸ í”½ì…€ë“¤ë§Œ fgd_resultì— ì €ì¥
+					//			compare(GSEG_Masks[i], cv::GC_FGD, fgd_result, cv::CMP_EQ);
+					//			//ê·¸ í›„ì— ì…ë ¥ ì˜ìƒê³¼ ë¹„êµí•˜ì—¬ foregroundë¼ëŠ” ë³€ìˆ˜ì— ëŒ€ì‘ë˜ëŠ” ì»¬ëŸ¬ ê°’ì„ ì €ì¥
+					//			//ì¦‰, GC_FGDë¼ê³  ë‚˜ì˜¨ ê²°ê³¼ê°’ ìœ„ì¹˜ì˜ ì»¬ëŸ¬ ì˜ìƒë§Œ ì €ì¥
+					//			//con_img.copyTo(foreground, fgd_result);
+					//
+					//			//ë§ˆì°¬ê°€ì§€ë¡œ GC_PR_FGDì— ëŒ€í•´ ì§„í–‰
+					//			compare(GSEG_Masks[i], GC_PR_FGD, pr_fgd_result, CMP_EQ);
+					//			//con_img.copyTo(pr_foreground, pr_fgd_result);
+					//
+					//			//ìµœì¢… ê²°ê³¼ íŒŒì¼(final_result)ì— fgd, pr_fgdì˜ ì»¬ëŸ¬ ì˜ìƒê°’ì„ ì €ì¥
+					//			con_img.copyTo(final_result, fgd_result);
+					//			con_img.copyTo(final_result, pr_fgd_result);
+					//
+					//			//final_result ì˜ìƒê³¼ skeletonDataì˜ ê°’ì„ í•©ì³ì„œ ì»¬ëŸ¬ ì˜ìƒ ìœ„ì— skeleton lineì´ ë³´ì´ê²Œ í‘œì‹œí•˜ëŠ” ì‘ì—…
+					//			for (int row = 0; row < 1080; row++){
+					//				for (int col = 0; col < 1920; col++){
+					//					if (skeletonDataMaps[i][row * 1920 + col] == 1){
+					//						final_result.at<Vec3b>(row, col)[0] = 255;
+					//						final_result.at<Vec3b>(row, col)[1] = 255;
+					//						final_result.at<Vec3b>(row, col)[2] = 0;
+					//
+					//					}
+					//				}
+					//			}
+					//
+					//			//ìµœì¢… ê²°ê³¼ í™”ë©´ ì €ì¥
+					//			std::string resultFileName = filePath::getInstance()->getResultPath() + date + "_Result_Gseg" + to_string(kFrameNumber) + "_" + to_string(i) + "_" + ".jpg";
+					//			imwrite(resultFileName.c_str(), final_result);
+					//
+					//			/**/printf("%dë²ˆì§¸ í”„ë ˆì„, %dë²ˆì§¸ BodyIndexì— ëŒ€í•´ GSEG ë°©ì‹ ì™„ë£Œ\n", kFrameNumber, i);
+					//		}
+					//	}
+#pragma endregion
+
+					//ì œì•ˆí•œ ë°©ì‹
+#pragma region Proposed Method	
+
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						if (isBody[i]){
+							/**/printf("%dë²ˆì§¸ í”„ë ˆì„, %dë²ˆì§¸ BodyIndexì— ëŒ€í•´ ì œì•ˆí•œ ë°©ì‹ ì‹œì‘\n", kFrameNumber, i);
+
+							//GrabCutì— ì‚¬ìš©ë˜ëŠ” ë³€ìˆ˜ë“¤
+							//ì—¬ê¸°ì„œëŠ” GrabCutì„ GraphCutì²˜ëŸ¼ ì´ìš©í•˜ê¸° ë•Œë¬¸ì— ì•„ë˜ ë³€ìˆ˜ë“¤ì˜ ë¦¬í„´ê°’ë“¤ì„ ë”°ë¡œ ì‚¬ìš©í•˜ì§€ ì•ŠìŒ.
+							my::GraphCut gc;
+							Mat back, fore;	//ëª¨ë¸(ì´ˆê¸° ì‚¬ìš©)
+							Rect rect(10, 10, 100, 100);
+
+							//ì‹¤ì œë¡œëŠ” GraphCutì²˜ëŸ¼ ì‘ë™
+							gc.graphCut(con_img,		//ì…ë ¥ì˜ìƒ		
+								Prop_Masks[i],			//ë¶„í•  ë§ˆìŠ¤í¬, í•´ë‹¹ ë§ˆìŠ¤í¬ì˜ ì „ê²½ê³¼ ë°°ê²½ìœ¼ë¡œ GraphCut ìˆ˜í–‰
+								rect,					//ì „ê²½ì„ í¬í•¨í•˜ëŠ” ì§ì‚¬ê°í˜•, ì—¬ê¸°ì„œëŠ” MASK ëª¨ë“œë¥¼ ì‚¬ìš©í•¨ìœ¼ë¡œ rectì˜ ê°’ì€ ì „í˜€ ì‚¬ìš©í•˜ì§€ ì•ŠëŠ”ë‹¤.
+								back, fore,				//ëª¨ë¸
+								1,						//ë°˜ë³µíšŸìˆ˜
+								GC_INIT_WITH_MASK,		//Maskë¥¼ ì‚¬ìš©í•˜ëŠ” ëª¨ë“œ ì„ íƒ
+								weightMaps[i]);		//Skeleton Weight Map
+
+
+							/*
+							GraphCutì˜ ê²°ê³¼ê°’ìœ¼ë¡œ ë‚˜ì˜¤ëŠ” GC_Masksì—ì„œ ì›í•˜ëŠ” ê²°ê³¼ê°’ì„ ë½‘ì•„ì„œ(compareì„ í†µí•´) ì €ì¥í•˜ê¸° ìœ„í•œ ë³€ìˆ˜
+							*/
+							Mat fgd_result, pr_fgd_result;
+
+							/*
+							ê²°ê³¼ì˜ìƒë“¤ì„ ì´ë¯¸ì§€ íŒŒì¼ë¡œ ì €ì¥í•˜ê¸° ìœ„í•œ ë³€ìˆ˜ë“¤
+							*/
+							//Mat foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+							//Mat pr_foreground(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+							Mat final_result(con_img.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+
+							//ê²°ê³¼ ì˜ìƒì—ì„œ GC_FGDì¸ í”½ì…€ë“¤ë§Œ fgd_resultì— ì €ì¥
+							compare(Prop_Masks[i], cv::GC_FGD, fgd_result, cv::CMP_EQ);
+							//ê·¸ í›„ì— ì…ë ¥ ì˜ìƒê³¼ ë¹„êµí•˜ì—¬ foregroundë¼ëŠ” ë³€ìˆ˜ì— ëŒ€ì‘ë˜ëŠ” ì»¬ëŸ¬ ê°’ì„ ì €ì¥
+							//ì¦‰, GC_FGDë¼ê³  ë‚˜ì˜¨ ê²°ê³¼ê°’ ìœ„ì¹˜ì˜ ì»¬ëŸ¬ ì˜ìƒë§Œ ì €ì¥
+							//con_img.copyTo(foreground, fgd_result);
+
+							//ë§ˆì°¬ê°€ì§€ë¡œ GC_PR_FGDì— ëŒ€í•´ ì§„í–‰
+							compare(Prop_Masks[i], GC_PR_FGD, pr_fgd_result, CMP_EQ);
+							//con_img.copyTo(pr_foreground, pr_fgd_result);
+
+							//ìµœì¢… ê²°ê³¼ íŒŒì¼(final_result)ì— fgd, pr_fgdì˜ ì»¬ëŸ¬ ì˜ìƒê°’ì„ ì €ì¥
+							con_img.copyTo(final_result, fgd_result);
+							con_img.copyTo(final_result, pr_fgd_result);
+
+							//final_result ì˜ìƒê³¼ skeletonDataì˜ ê°’ì„ í•©ì³ì„œ ì»¬ëŸ¬ ì˜ìƒ ìœ„ì— skeleton lineì´ ë³´ì´ê²Œ í‘œì‹œí•˜ëŠ” ì‘ì—…
+							for (int row = 0; row < 1080; row++){
+								for (int col = 0; col < 1920; col++){
+									if (skeletonDataMaps[i][row * 1920 + col] == 1){
+										final_result.at<Vec3b>(row, col)[0] = 255;
+										final_result.at<Vec3b>(row, col)[1] = 255;
+										final_result.at<Vec3b>(row, col)[2] = 0;
+
+									}
+								}
+							}
+
+							//ìµœì¢… ê²°ê³¼ í™”ë©´ ì €ì¥
+							//std::string resultFileName = filePath::getInstance()->getResultPath() + date + "_Result_Prop" + to_string(kFrameNumber) + "_" + to_string(i) + "_" + ".jpg";
+							std::string resultFileName = filePath::getInstance()->getResultPath() + "HeadSigma=" + to_string(head_sigma) + "_FootSigma=" + to_string(foot_sigma) + "_Sigma=" + to_string(sigma) + "_DivWeight" + to_string(weight) + ".jpg";
+							imwrite(resultFileName.c_str(), final_result);
+
+							/**/printf("%dë²ˆì§¸ í”„ë ˆì„, %dë²ˆì§¸ BodyIndexì— ëŒ€í•´ ì œì•ˆí•œ ë°©ì‹ ì™„ë£Œ\n", kFrameNumber, i);
+
+
+							back.refcount = 0;
+							back.release();
+							fore.refcount = 0;
+							fore.release();
+							fgd_result.refcount = 0;
+							fgd_result.release();
+							pr_fgd_result.refcount = 0;
+							pr_fgd_result.release();
+							final_result.refcount = 0;
+							final_result.release();
+						}
+					}
+
+#pragma endregion
+
+
+					//ë©”ëª¨ë¦¬ í•´ì œ
+
+					con_img.refcount = 0;
+					con_img.release();
+
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						if (skeletonDataMaps[i] != NULL)
+							delete[] skeletonDataMaps[i];
+					}
+					if (skeletonDataMaps != NULL)
+						delete[] skeletonDataMaps;
+
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						delete[] weightMaps[i];
+					}
+					delete[] weightMaps;
+
+
+					for (int i = 0; i < kTotal_BodyIndex; i++){
+						GSEG_Masks[i].refcount = 0;
+						GSEG_Masks[i].release();
+						Prop_Masks[i].refcount = 0;
+						Prop_Masks[i].release();
+					}
+					delete[] GSEG_Masks;
+					delete[] Prop_Masks;
+
+					//TEST: ì†Œìš” ì‹œê°„ ì¸¡ì •(end)///////////////
+					end = clock();
+					cout << "ìˆ˜í–‰ì‹œê°„ : " << ((end - begin)) << endl;
+					//////////////////////////////////////////
 				}
-			}	
-
-			//ÃÖÁ¾ °á°ú È­¸é ÀúÀå
-			std::string resultFileName = filePath::getInstance()->getResultPath() + "result" + to_string(kFrameNumber) + "_" + to_string(i) + "_" + date + ".jpg";
-			imwrite(resultFileName.c_str(), final_result);
-
-			/**/printf("%d¹øÂ° ÇÁ·¹ÀÓ, %d¹øÂ° BodyIndex GraphCut ¿Ï·á\n", kFrameNumber, i);		
+			}
 		}
 	}
 
-	//¸Ş¸ğ¸® ÇØÁ¦
-	for (int i = 0; i < kTotal_BodyIndex; i++){
-		if (skeletonDataMaps[i] != NULL)
-			delete[] skeletonDataMaps[i];
-	}
-	if (skeletonDataMaps != NULL)
-		delete[] skeletonDataMaps;
 	
-	delete[] skeletonMaps;
 
-	delete[] GC_Masks;
-
-	//TEST: ¼Ò¿ä ½Ã°£ ÃøÁ¤(end)///////////////
-	end = clock();
-	cout << "¼öÇà½Ã°£ : " << ((end - begin)) << endl;
-	//////////////////////////////////////////
-
-	//ÇÁ·Î±×·¥ Á¾·á
+	//í”„ë¡œê·¸ë¨ ì¢…ë£Œ
 	return 0;
 }
 
 
 
 
-BYTE* loadBodyIndexFile(int frameNumber){
+void loadBodyIndexFile(BYTE*& bodyIndexData, int frameNumber){
 	/*
-	(1920 * 2) * 1080ÀÇ ÇüÅÂ
-	L1, R1, L2, R2, L3, R3, L4, R4 ... ¼øÀ¸·Î ÀúÀå
-	LÀº ½ÇÁ¦ µ¥ÀÌÅÍ °ª. Áï, bodyIndexÀÇ 0~5¹ø±îÁöÀÇ ¹øÈ£°¡ µé¾îÀÖÀ½
-	RÀÇ °ªÀº ÇØ´ç °ªÀÇ Á¤È®µµ¸¦ ³ªÅ¸³¿. Áï 0, 1 µÎ °ª¸¸ °¡Áö¸ç 0ÀÌ¸é º¸Á¤µÈ °ª, 1ÀÌ¸é Á¤È®ÇÑ °ªÀ» ³ªÅ¸³½´Ù.	
+	(1920 * 2) * 1080ì˜ í˜•íƒœ
+	L1, R1, L2, R2, L3, R3, L4, R4 ... ìˆœìœ¼ë¡œ ì €ì¥
+	Lì€ ì‹¤ì œ ë°ì´í„° ê°’. ì¦‰, bodyIndexì˜ 0~5ë²ˆê¹Œì§€ì˜ ë²ˆí˜¸ê°€ ë“¤ì–´ìˆìŒ
+	Rì˜ ê°’ì€ í•´ë‹¹ ê°’ì˜ ì •í™•ë„ë¥¼ ë‚˜íƒ€ëƒ„. ì¦‰ 0, 1 ë‘ ê°’ë§Œ ê°€ì§€ë©° 0ì´ë©´ ë³´ì •ëœ ê°’, 1ì´ë©´ ì •í™•í•œ ê°’ì„ ë‚˜íƒ€ë‚¸ë‹¤.	
 	*/
 	BinaryReader br(filePath::getInstance()->getBodyIndexPath(frameNumber));
 	int cur_pos = 0;
 	int file_length = (int)3840 * 1080;
 
-	//HACK: ½º¸¶Æ® Æ÷ÀÎÅÍ¸¦ °í·ÁÇÏ´Â Áß, ÇöÀç´Â ÇÁ·ÎÁ§Æ®°¡ ÀÛ¾Æ¼­ main ¸¶Áö¸·¿¡¼­ delete¸¦ ÅëÇØ ¸Ş¸ğ¸® ÇØÁ¦¸¦ ÁøÇà Áß
-	BYTE* bodyIndexData = new BYTE[3840 * 1080];
+	//HACK: ìŠ¤ë§ˆíŠ¸ í¬ì¸í„°ë¥¼ ê³ ë ¤í•˜ëŠ” ì¤‘, í˜„ì¬ëŠ” í”„ë¡œì íŠ¸ê°€ ì‘ì•„ì„œ main ë§ˆì§€ë§‰ì—ì„œ deleteë¥¼ í†µí•´ ë©”ëª¨ë¦¬ í•´ì œë¥¼ ì§„í–‰ ì¤‘
+	bodyIndexData = new BYTE[3840 * 1080];
 
 	int arr_index = 0;
 	while (cur_pos < file_length)
@@ -301,9 +598,9 @@ BYTE* loadBodyIndexFile(int frameNumber){
 		cur_pos += sizeof(BYTE);
 	}
 
-	return bodyIndexData;
+	//return bodyIndexData;
 
-	//bodyIndex¸¦ Ãâ·ÂÇÏ±â À§ÇØ ¸¸µç ÇÔ¼ö
+	//bodyIndexë¥¼ ì¶œë ¥í•˜ê¸° ìœ„í•´ ë§Œë“  í•¨ìˆ˜
 	/*
 	Mat bodyIndex(con_img.rows, con_img.cols, CV_8UC1, Scalar(255));
 	for (int row = 0; row < con_img.rows; row++){
@@ -317,38 +614,38 @@ BYTE* loadBodyIndexFile(int frameNumber){
 	*/
 }
 
-short* loadMappingFile(int frameNumber){
+void loadMappingFile(short*& mappingDats, int frameNumber){
 	/*
-	(512 * 2) * 424ÀÇ ÇüÅÂ
-	Y1, X1, Y2, X2, Y3, X3, Y4, X4 ... ¼øÀ¸·Î ÀúÀå
-	¿©±â µé¾îÀÖ´Â Y¿Í XÀÇ ÁÂÇ¥ °ªÀº 512 * 424¿¡ ÀÖ´ø depth°ª ±âÁØ ÁÂÇ¥°ªµéÀ»
-	1920 * 1080À¸·Î mapping ÇÒ ¶§ ¿¬°áµÇ´Â x, yÁÂÇ¥ÀÇ ½ÇÁ¦ °ªÀ» ÀúÀå
-	1920 * 1080À» ¹ş¾î³ª´Â °ªÀÌ µé¾îÀÖ´Â °æ¿ì(³ëÀÌÁî³ª ÃøÁ¤ ºÒ°¡ µî)°¡ ÀÖÀ¸´Ï Ã¼Å©°¡ ÇÊ¿äÇÔ
+	(512 * 2) * 424ì˜ í˜•íƒœ
+	Y1, X1, Y2, X2, Y3, X3, Y4, X4 ... ìˆœìœ¼ë¡œ ì €ì¥
+	ì—¬ê¸° ë“¤ì–´ìˆëŠ” Yì™€ Xì˜ ì¢Œí‘œ ê°’ì€ 512 * 424ì— ìˆë˜ depthê°’ ê¸°ì¤€ ì¢Œí‘œê°’ë“¤ì„
+	1920 * 1080ìœ¼ë¡œ mapping í•  ë•Œ ì—°ê²°ë˜ëŠ” x, yì¢Œí‘œì˜ ì‹¤ì œ ê°’ì„ ì €ì¥
+	1920 * 1080ì„ ë²—ì–´ë‚˜ëŠ” ê°’ì´ ë“¤ì–´ìˆëŠ” ê²½ìš°(ë…¸ì´ì¦ˆë‚˜ ì¸¡ì • ë¶ˆê°€ ë“±)ê°€ ìˆìœ¼ë‹ˆ ì²´í¬ê°€ í•„ìš”í•¨
 	*/
 	BinaryReader br(filePath::getInstance()->getMappPath(frameNumber));
 	int cur_pos = 0;
 	int file_length = (int)1024 * 424;
 
-	//HACK: ½º¸¶Æ® Æ÷ÀÎÅÍ¸¦ °í·ÁÇÏ´Â Áß, ÇöÀç´Â createSkeletonData ¸¶Áö¸·¿¡¼­ delete¸¦ ÅëÇØ ¸Ş¸ğ¸® ÇØÁ¦¸¦ ÁøÇà Áß
-	short* mappData = new short[1024 * 424];
+	//HACK: ìŠ¤ë§ˆíŠ¸ í¬ì¸í„°ë¥¼ ê³ ë ¤í•˜ëŠ” ì¤‘, í˜„ì¬ëŠ” createSkeletonData ë§ˆì§€ë§‰ì—ì„œ deleteë¥¼ í†µí•´ ë©”ëª¨ë¦¬ í•´ì œë¥¼ ì§„í–‰ ì¤‘
+	mappingDats = new short[1024 * 424];
 
 	int arr_index = 0;
 	while (cur_pos < file_length)
 	{
-		mappData[arr_index] = br.ReadInt16();
+		mappingDats[arr_index] = br.ReadInt16();
 		arr_index++;
 		cur_pos++;
 	}
 
-	return mappData;
+	//return mappData;
 }
 
-BYTE* loadDepthImageFile(int frameNumber){
+void loadDepthImageFile(BYTE*& depthData, int frameNumber){
 	/*
-	loadBodyIndexFile¿Í µ¿ÀÏÇÑ ¹æ½Ä
-	´Ü, depth µ¥ÀÌÅÍÀÇ °æ¿ì 1byte°¡ ¾Æ´Ï¶ó 2byteÀÌ¹Ç·Î 2byte ¾¿ ÀĞ¾î¿Â´Ù.
+	loadBodyIndexFileì™€ ë™ì¼í•œ ë°©ì‹
+	ë‹¨, depth ë°ì´í„°ì˜ ê²½ìš° 1byteê°€ ì•„ë‹ˆë¼ 2byteì´ë¯€ë¡œ 2byte ì”© ì½ì–´ì˜¨ë‹¤.
 	*/
-	const ushort minDepth = 500;	//³Ê¹« ³·Àº depth°ªÀº °É·¯³»±â À§ÇÑ °ª
+	const ushort minDepth = 500;	//ë„ˆë¬´ ë‚®ì€ depthê°’ì€ ê±¸ëŸ¬ë‚´ê¸° ìœ„í•œ ê°’
 	const ushort maxDepth = 65535;	//unsigned short's max value
 	const int MapDepthToByte = 8000 / 256;
 
@@ -356,8 +653,8 @@ BYTE* loadDepthImageFile(int frameNumber){
 	int cur_pos = 0;
 	int file_length = (int)512 * 424;
 
-	//HACK: ½º¸¶Æ® Æ÷ÀÎÅÍ¸¦ °í·ÁÇÏ´Â Áß, ÇöÀç´Â ÇÁ·ÎÁ§Æ®°¡ ÀÛ¾Æ¼­ main ¸¶Áö¸·¿¡¼­ delete¸¦ ÅëÇØ ¸Ş¸ğ¸® ÇØÁ¦¸¦ ÁøÇà Áß
-	BYTE* depthData = new BYTE[512 * 424];
+	//HACK: ìŠ¤ë§ˆíŠ¸ í¬ì¸í„°ë¥¼ ê³ ë ¤í•˜ëŠ” ì¤‘, í˜„ì¬ëŠ” í”„ë¡œì íŠ¸ê°€ ì‘ì•„ì„œ main ë§ˆì§€ë§‰ì—ì„œ deleteë¥¼ í†µí•´ ë©”ëª¨ë¦¬ í•´ì œë¥¼ ì§„í–‰ ì¤‘
+	depthData = new BYTE[512 * 424];
 
 	int arr_index = 0;
 	while (cur_pos < file_length)
@@ -369,20 +666,20 @@ BYTE* loadDepthImageFile(int frameNumber){
 		cur_pos++;
 	}
 
-	return depthData;
+	//return depthData;
 }
 
-Point2i** loadSkeletonFile(int frameNumber){
+void loadSkeletonFile(Point2i**& skeletonDatas_origin, int frameNumber){
 	/*
-	½ºÄÌ·¹Åæ Á¤º¸¸¦ .csv·ÎºÎÅÍ ÀĞ¾î¿Â´Ù.
-	ÀÌ¶§ ÇØ»óµµ´Â 512x424±âÁØ(depth)
-	Â÷ÈÄ¿¡ mappingÀ» ÅëÇØ 1920x1080¿¡ ¸ÂÃç °ª º¯°æÀ» ÇØ¾ßÇÔ
+	ìŠ¤ì¼ˆë ˆí†¤ ì •ë³´ë¥¼ .csvë¡œë¶€í„° ì½ì–´ì˜¨ë‹¤.
+	ì´ë•Œ í•´ìƒë„ëŠ” 512x424ê¸°ì¤€(depth)
+	ì°¨í›„ì— mappingì„ í†µí•´ 1920x1080ì— ë§ì¶° ê°’ ë³€ê²½ì„ í•´ì•¼í•¨
 	*/
 
-	//º¯¼ö ¼±¾ğ, ¸Ş¸ğ¸® ÇÒ´ç, ÃÊ±âÈ­
-	Point2i** skeletonDatas_origin = new Point2i*[kTotal_BodyIndex];
+	//ë³€ìˆ˜ ì„ ì–¸, ë©”ëª¨ë¦¬ í• ë‹¹, ì´ˆê¸°í™”
+	skeletonDatas_origin = new Point2i*[kTotal_BodyIndex];
 	for (int i = 0; i < kTotal_BodyIndex; i++){
-		//kJointFromKinectV2´Â kinect2¿¡¼­ Á¦°øÇÏ´Â jointsÀÇ °³¼ö(25°³)
+		//kJointFromKinectV2ëŠ” kinect2ì—ì„œ ì œê³µí•˜ëŠ” jointsì˜ ê°œìˆ˜(25ê°œ)
 		skeletonDatas_origin[i] = new Point2i[kJointFromKinectV2];
 
 		for (int j = 0; j < kJointFromKinectV2; j++){
@@ -391,7 +688,7 @@ Point2i** loadSkeletonFile(int frameNumber){
 		}
 	}
 
-	//ÆÄÀÏ °æ·Î ÁöÁ¤
+	//íŒŒì¼ ê²½ë¡œ ì§€ì •
 	FILE* stream = fopen(filePath::getInstance()->getSkeletonPath(), "r");
 
 	char line[1024];
@@ -399,16 +696,16 @@ Point2i** loadSkeletonFile(int frameNumber){
 	int jointsCount = 0;
 	int bodyIndex = 0;
 
-	//kinect´Â ÃÑ 6¸íÀÇ bodyIndex¸¦ ÀĞÀ» ¼ö ÀÖÀ½. ¸î ¹øÂ° bodyIndex Á¤º¸°¡ Á¸ÀçÇÏ´ÂÁö È®ÀÎÇÏ±â À§ÇÑ º¯¼ö
+	//kinectëŠ” ì´ 6ëª…ì˜ bodyIndexë¥¼ ì½ì„ ìˆ˜ ìˆìŒ. ëª‡ ë²ˆì§¸ bodyIndex ì •ë³´ê°€ ì¡´ì¬í•˜ëŠ”ì§€ í™•ì¸í•˜ê¸° ìœ„í•œ ë³€ìˆ˜
 	for (int i = 0; i < kTotal_BodyIndex; i++){
 		isBody[i] = false;
 	}
 
 	/*
-	HACK : csvÆÄÀÏ¿¡ Ã¥°¥ÇÇÃ³·³ ÀúÀåÇÒ ¼ö ¾ø±â ¶§¹®¿¡, ¸Å frame¸¶´Ù ÇØ´ç frame¼ö¸¸Å­ÀÇ ¶óÀÎÀ» ÀĞ¾î¾ß ÇÔ
-	µÎ °¡Áö °æ¿ì·Î ÇÑÁ¤
-	Ã¹¹øÂ° °æ¿ì´Â ¸Ç Ã¹ ÇÁ·¹ÀÓ¿¡ Ã¹¹øÂ° »ç¶÷ÀÌ ÀâÈù °æ¿ì
-	µÎ¹øÀç °æ¿ì´Â À§ °æ¿ì°¡ ¾Æ´Ñ °æ¿ì
+	HACK : csvíŒŒì¼ì— ì±…ê°ˆí”¼ì²˜ëŸ¼ ì €ì¥í•  ìˆ˜ ì—†ê¸° ë•Œë¬¸ì—, ë§¤ frameë§ˆë‹¤ í•´ë‹¹ frameìˆ˜ë§Œí¼ì˜ ë¼ì¸ì„ ì½ì–´ì•¼ í•¨
+	ë‘ ê°€ì§€ ê²½ìš°ë¡œ í•œì •
+	ì²«ë²ˆì§¸ ê²½ìš°ëŠ” ë§¨ ì²« í”„ë ˆì„ì— ì²«ë²ˆì§¸ ì‚¬ëŒì´ ì¡íŒ ê²½ìš°
+	ë‘ë²ˆì¬ ê²½ìš°ëŠ” ìœ„ ê²½ìš°ê°€ ì•„ë‹Œ ê²½ìš°
 	*/
 	if (frameNumber != 0)
 	{
@@ -420,25 +717,25 @@ Point2i** loadSkeletonFile(int frameNumber){
 	}
 
 	/*
-	À§ ¹İº¹¹®À» ÅëÇØ ÀÌÁ¦ streamÀº csv¿¡¼­ ÇöÀç frameNumber¿¡ À§Ä¡·Î ÀÌµ¿ÇÔ
+	ìœ„ ë°˜ë³µë¬¸ì„ í†µí•´ ì´ì œ streamì€ csvì—ì„œ í˜„ì¬ frameNumberì— ìœ„ì¹˜ë¡œ ì´ë™í•¨
 	*/
 
 	jointsCount = 0;
 
 	while (fgets(line, 1024, stream))
 	{
-		//joints °³¼ö¸¸Å­ ÀĞÀ¸¸é(ÇÑ ¶óÀÎ´ç ÇÏ³ªÀÇ joint¿¡ ´ëÇÑ Á¤º¸) ÇÑ¸íÀ» ÀĞÀ» °ÍÀÌ¹Ç·Î, ´ÙÀ½ »ç¶÷À» ÀĞ±â À§ÇØ º¯¼ö ÃÊ±âÈ­
+		//joints ê°œìˆ˜ë§Œí¼ ì½ìœ¼ë©´(í•œ ë¼ì¸ë‹¹ í•˜ë‚˜ì˜ jointì— ëŒ€í•œ ì •ë³´) í•œëª…ì„ ì½ì„ ê²ƒì´ë¯€ë¡œ, ë‹¤ìŒ ì‚¬ëŒì„ ì½ê¸° ìœ„í•´ ë³€ìˆ˜ ì´ˆê¸°í™”
 		if (jointsCount == kJointFromKinectV2){
 			jointsCount = 0;
 			
 			bodyIndex++;
 		}
-		//6¸íÀÇ bodyIndexÀ» ¸ğµÎ ´Ù ÀĞÀ¸¸é ÇöÀç frameÀÇ skeleton Á¤º¸¸¦ ´Ù ÀĞÀº °ÍÀÌ µÇ¹Ç·Î ¹İº¹¹®À» ºüÁ®³ª¿Â´Ù.
+		//6ëª…ì˜ bodyIndexì„ ëª¨ë‘ ë‹¤ ì½ìœ¼ë©´ í˜„ì¬ frameì˜ skeleton ì •ë³´ë¥¼ ë‹¤ ì½ì€ ê²ƒì´ ë˜ë¯€ë¡œ ë°˜ë³µë¬¸ì„ ë¹ ì ¸ë‚˜ì˜¨ë‹¤.
 		if (bodyIndex == 6) break;
 
 		/*
-		csvÆÄÀÏÀ» ÀĞ´Â ºÎºĞ
-		csvÆÄÀÏ ±¸¼ºÀº x , y , z , state(ÃøÁ¤ ½Å·Úµµ) , bodyIndex ¼øÀÌ´Ù.
+		csvíŒŒì¼ì„ ì½ëŠ” ë¶€ë¶„
+		csvíŒŒì¼ êµ¬ì„±ì€ x , y , z , state(ì¸¡ì • ì‹ ë¢°ë„) , bodyIndex ìˆœì´ë‹¤.
 		*/
 		char* tmp_x = _strdup(line);
 		int csv_x = atoi(getfield(tmp_x, 1));
@@ -457,8 +754,8 @@ Point2i** loadSkeletonFile(int frameNumber){
 		free(tmp_bodyIndex);
 
 		/*
-		ÀĞÀº bodyIndexÁ¤º¸°¡ 9999¶ó´Â °ÍÀº ÇØ´ç ¹øÈ£ÀÇ »ç¶÷ÀÌ ÃøÁ¤µÇÁö ¾Ê¾Ò´Ù´Â ¼Ò¸®ÀÌ¹Ç·Î 
-		body°¡ ¾ø´Ù°í isBodyº¯¼ö¿¡ ÀúÀå
+		ì½ì€ bodyIndexì •ë³´ê°€ 9999ë¼ëŠ” ê²ƒì€ í•´ë‹¹ ë²ˆí˜¸ì˜ ì‚¬ëŒì´ ì¸¡ì •ë˜ì§€ ì•Šì•˜ë‹¤ëŠ” ì†Œë¦¬ì´ë¯€ë¡œ 
+		bodyê°€ ì—†ë‹¤ê³  isBodyë³€ìˆ˜ì— ì €ì¥
 		*/
 		if (csv_bodyIndex == 9999)
 		{
@@ -481,46 +778,94 @@ Point2i** loadSkeletonFile(int frameNumber){
 			*/
 		}
 
-		//ÇöÀç joint¹øÈ£ÀÇ x, y ÁÂÇ¥ ÀúÀå
+		//í˜„ì¬ jointë²ˆí˜¸ì˜ x, y ì¢Œí‘œ ì €ì¥
 		(skeletonDatas_origin[bodyIndex][jointsCount]).x = csv_x;
 		(skeletonDatas_origin[bodyIndex][jointsCount]).y = csv_y;
 		jointsCount++;
 	}
 
 	fclose(stream);
-	return skeletonDatas_origin;
+
+	//return skeletonDatas_origin;
 }
 
 
 
 void addSeedByBodyIndex(Mat* mask, BYTE* bodyIndexData){
 	/*
-	BodyIndex¸¦ Seed¸¦ ÀÔ·ÂÇÒ ¶§ kinect¿¡¼­ Á¦°øÇÏ´Â BodyIndex´Â 512 * 424, Áï depth ÇØ»óµµ ±âÁØ
-	º» ¿¬±¸¿¡¼­´Â 1920 * 1080 ¿µ»ó¿¡¼­ÀÇ segmentationÀÌ±â ¶§¹®¿¡ µÎ ÇØ»óµµ ¸ÅÇÎÀ» ÇÑ HR_BodyIndex¸¦ ÀÌ¿ë
-	µû¶ó¼­ ÇÊ¿¬ÀûÀ¸·Î interpolationÇÑ Á¤º¸°¡ µé¾î°¥ ¼ö¹Û¿¡ ¾ø°í, ¿ø·¡ kinect¿¡¼­ Á¦°øÇÏ´Â Á¤º¸¿Í interpolationÇÑ Á¤º¸¸¦ ±¸º°ÇÒ ÇÊ¿ä°¡ ÀÖÀ½
-	µû¶ó¼­ HR_BodyIndexÀÇ ÇØ»óµµ´Â (1920 * 2) * 1080ÀÌ µÇ¸ç Ã¹¹øÂ° °ªÀº bodyIndex°ª, µÎ¹øÂ° °ªÀº º»·¡ Å°³ØÆ® °ª(1) È¤Àº interpolationÇÑ °ª(0)À¸·Î ½ÖÀ¸·Î Á¸Àç.
+	BodyIndexë¥¼ Seedë¥¼ ì…ë ¥í•  ë•Œ kinectì—ì„œ ì œê³µí•˜ëŠ” BodyIndexëŠ” 512 * 424, ì¦‰ depth í•´ìƒë„ ê¸°ì¤€
+	ë³¸ ì—°êµ¬ì—ì„œëŠ” 1920 * 1080 ì˜ìƒì—ì„œì˜ segmentationì´ê¸° ë•Œë¬¸ì— ë‘ í•´ìƒë„ ë§¤í•‘ì„ í•œ HR_BodyIndexë¥¼ ì´ìš©
+	ë”°ë¼ì„œ í•„ì—°ì ìœ¼ë¡œ interpolationí•œ ì •ë³´ê°€ ë“¤ì–´ê°ˆ ìˆ˜ë°–ì— ì—†ê³ , ì›ë˜ kinectì—ì„œ ì œê³µí•˜ëŠ” ì •ë³´ì™€ interpolationí•œ ì •ë³´ë¥¼ êµ¬ë³„í•  í•„ìš”ê°€ ìˆìŒ
+	ë”°ë¼ì„œ HR_BodyIndexì˜ í•´ìƒë„ëŠ” (1920 * 2) * 1080ì´ ë˜ë©° ì²«ë²ˆì§¸ ê°’ì€ bodyIndexê°’, ë‘ë²ˆì§¸ ê°’ì€ ë³¸ë˜ í‚¤ë„¥íŠ¸ ê°’(1) í˜¹ì€ interpolationí•œ ê°’(0)ìœ¼ë¡œ ìŒìœ¼ë¡œ ì¡´ì¬.
 	*/
+
+	Point2i* min_positions = new Point2i[kTotal_BodyIndex];
+	Point2i* max_positions = new Point2i[kTotal_BodyIndex];
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+		min_positions[i] = Point2i(IMAGE_WIDTH, IMAGE_HEIGHT);		
+		max_positions[i] = Point2i(0, 0);
+
+		isBody[i] = false;
+	}
+		
+
 	for (int row = 0; row < IMAGE_HEIGHT; row++){
 		for (int col = 0; col < IMAGE_WIDTH * 2; col += 2){
 
-			if (bodyIndexData[row * IMAGE_WIDTH * 2 + col + 1] == 1){
-				int index = bodyIndexData[row * IMAGE_WIDTH * 2 + col];
-				if (index <= kTotal_BodyIndex)
-					mask[index].at<uchar>(row, (col / 2)) = GC_FGD;
-			}
-			else{//bodyIndexData[row * IMAGE_WIDTH * 2 + col + 1] == 0
-				int index = bodyIndexData[row * IMAGE_WIDTH * 2 + col];
-				if (index <= kTotal_BodyIndex)
+			int index = bodyIndexData[row * IMAGE_WIDTH * 2 + col];
+
+			if (index <= kTotal_BodyIndex){
+				isBody[index] = true;
+				if (bodyIndexData[row * IMAGE_WIDTH * 2 + col + 1] == 1){
+					mask[index].at<uchar>(row, (col / 2)) = GC_FGD;					
+					//mask[index].at<uchar>(row, (col / 2)) = GC_PR_FGD;
+				}
+				else{ //bodyIndexData[row * IMAGE_WIDTH * 2 + col + 1] == 0					
 					mask[index].at<uchar>(row, (col / 2)) = GC_PR_FGD;
+				}
+
+			}
+			if (col / 2 < min_positions[index].x) min_positions[index].x = col / 2;
+			if (row < min_positions[index].y) min_positions[index].y = row;
+			if (col / 2 > max_positions[index].x) max_positions[index].x = col / 2;
+			if (row > max_positions[index].y) max_positions[index].y = row;
+			
+		}
+	}
+	
+	//bodyIndexì˜ì—­ì˜ 40%ë§Œí¼ í™•ì¥ì‹œí‚¨ ì˜ì—­ì„ PR_BGD ì‹œë“œ ì…ë ¥
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+		if (max_positions[i].x != 0 && max_positions[i].y != 0){		
+
+			int width	= max_positions[i].x - min_positions[i].x;
+			int height	= max_positions[i].y - min_positions[i].y;
+
+			int width_expand	= (double)width * 0.2;
+			int height_expand	= (double)height * 0.2;
+
+			Point2i start	= Point2i(min_positions[i].x - width_expand, min_positions[i].y - height_expand);
+			Point2i end		= Point2i(max_positions[i].x + width_expand, max_positions[i].y + height_expand);
+
+			if (start.x < 0) start.x = 0;
+			if (start.y < 0) start.y = 0;
+			if (end.x > IMAGE_WIDTH) end.x = IMAGE_WIDTH;
+			if (end.y > IMAGE_HEIGHT) end.y = IMAGE_HEIGHT;
+
+
+			for (int row = start.y; row < end.y; row++){
+				for (int col = start.x; col < end.x; col++){					
+					if (mask[i].at<uchar>(row, col) == GC_BGD){
+						mask[i].at<uchar>(row, col) = GC_PR_BGD;
+					}
+				}
 			}
 		}
 	}
-
 }
 
 void addSeedBySkeleton(Mat* mask, BYTE** skeletonDatas){
 	/*
-	Skeleton joint¸¦ Åä´ë·Î ¸¸µç Skeleton LinesÀ» Seed·Î ÀÔ·Â
+	Skeleton jointë¥¼ í† ëŒ€ë¡œ ë§Œë“  Skeleton Linesì„ Seedë¡œ ì…ë ¥
 	*/
 	for (int row = 0; row < IMAGE_HEIGHT; row++){
 		for (int col = 0; col < IMAGE_WIDTH; col++){
@@ -528,6 +873,7 @@ void addSeedBySkeleton(Mat* mask, BYTE** skeletonDatas){
 			for (int i = 0; i < kTotal_BodyIndex; i++){
 				if (skeletonDatas[i][row * IMAGE_WIDTH + col] == 1){
 					mask[i].at<uchar>(row, col) = GC_FGD;
+					//mask[i].at<uchar>(row, col) = GC_PR_FGD;
 				}
 			}
 		}
@@ -537,13 +883,241 @@ void addSeedBySkeleton(Mat* mask, BYTE** skeletonDatas){
 
 
 
-BYTE** createSkeletonData(int frameNumber, Point2i** skeletonDatas_origin){
+void createDistanceMaps(Mat*& outputInput, BYTE** skeletonDataMaps){
 	/*
-	skeletonDatas_origin(ÇØ»óµµ 512x424)ÀÇ skeleton jointµéÀÇ °ªÀ¸·ÎºÎÅÍ
-	skeletonDatas_hd(ÇØ»óµµ 1920x1080)ÀÇ Á¤º¸·Î ¸¸µé¸é¼­, °¢ jointsµéÀ» ÁÙ·Î ¿¬°áÇÑ´Ù.
+	ê° bodyIndexì— ëŒ€í•´ distance mapì„ ë§Œë“œëŠ” í•¨ìˆ˜
+	í˜„ì¬ ì˜ìƒ ë‚´ pixelì´ ìì‹ ê³¼ ê°€ì¥ ê°€ê¹Œìš´ jointì™€ì˜ í”½ì…€ ê±°ë¦¬ë¥¼ ìˆ«ìë¡œ í‘œí˜„
+	jointì´ë©´ 0, ê·¸ ì™¸ëŠ” L-1 Distance
 	*/
-	//¸Ş¸ğ¸® ÇÒ´ç ¹× ÃÊ±âÈ­
-	BYTE** skeletonDatasMap = new BYTE*[kTotal_BodyIndex];
+		
+	outputInput = new Mat[kTotal_BodyIndex];
+
+	//skeleton lineì •ë³´ë¥¼ ë°”ì´ë„ˆë¦¬ ì •ë³´ë¡œ ì…ë ¥
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+		if (isBody[i]){
+
+			Mat binaryInput = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(255));
+
+			for (int row = 0; row < IMAGE_HEIGHT; row++){
+				for (int col = 0; col < IMAGE_WIDTH; col++){
+
+					if (skeletonDataMaps[i][row * 1920 + col] == 1){
+						binaryInput.at<uchar>(row, col) = 0;
+					}
+
+				}
+			}
+
+			distanceTransform(binaryInput, outputInput[i], CV_DIST_L1, CV_DIST_MASK_3);
+		}
+	}
+		
+
+
+	/*
+	//FIXME : skeleton lineì— ìˆëŠ” ëª¨ë“  pixelë“¤ì„ ê³ ë ¤í•´ì„œ distance mapì„ ë§Œë“¤ì–´ì•¼ í•¨.
+	ushort** distanceMaps = new ushort*[kTotal_BodyIndex];
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+		distanceMaps[i] = new ushort[IMAGE_HEIGHT * IMAGE_WIDTH];
+	}
+
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+		if (isBody[i]){
+
+			for (int row = 0; row < IMAGE_HEIGHT; row++){
+				for (int col = 0; col < IMAGE_WIDTH; col++){
+					Point2i pos = Point2i(col, row);
+					//í˜„ì¬ pixelê³¼ ê°€ì¥ ê°€ê¹Œìš´ jointì˜ ë²ˆí˜¸ë¥¼ ì°¾ëŠ”ë‹¤
+					int jointNumber = getCloestJointNumber(pos, skeletonDatas_hd[i]);
+
+					//í•´ë‹¹ jointë¡œë¶€í„° ìƒì„±ë˜ëŠ” ëª¨ë“  skeleton linesì„ ì°¾ëŠ”ë‹¤
+					vector<vector<Point2i>> table = getSkeletonLinesAround(jointNumber, skeletonDatas_hd[i]);
+					//í˜„ì¬ pixelê³¼ ì°¾ì€ skeleton lines ìœ„ì— ìˆëŠ” ëª¨ë“  pixel ì¤‘ì— ê°€ì¥ ê°€ê¹Œìš´ pixelì˜ ìœ„ì¹˜ë¥¼ ì°¾ëŠ”ë‹¤.
+					Point2i cloestPixelPos;
+					double tmp = 50000;
+
+					for (int lineIndex = 0; lineIndex < table.size(); lineIndex++){
+						for (int pointIndex = 0; pointIndex < table[lineIndex].size(); pointIndex){
+							Point2i posInSkeletonLine = table[lineIndex][pointIndex];
+							double distance = getEuclideanDistanceTwoPoint(pos, posInSkeletonLine);
+							if (tmp < distance){
+								cloestPixelPos = posInSkeletonLine;
+								tmp = distance;								
+							}
+						}
+					}
+
+					//ë‘ pixel(í˜„ì¬ pixelê³¼ ê°€ì¥ ê°€ê¹Œìš´ skeleton lines ìœ„ì˜ pixel)ê°„ì˜ L1 Distanceë¥¼ êµ¬í•œë‹¤
+					distanceMaps[i][row * IMAGE_WIDTH + col] = getL1DistanceTwoPoint(pos, cloestPixelPos);
+				}
+			}
+		}
+	}
+	*/
+	
+	//return outputInput;
+}
+
+
+vector<vector<Point2i>> getSkeletonLinesAround(int jointNumber, Point2i* skeletonJointPosition){
+		
+	vector<int> connectedJointNumbers;
+	/*
+	jointê°„ ì—°ê²°ë˜ëŠ” ì ë“¤ì˜ ë²ˆí˜¸ë¥¼ ë¯¸ë¦¬ ì •ì˜
+	ë²ˆí˜¸ì™€ joint ì´ë¦„ê°„ì˜ ë§¤ì¹­ì€ kinectv2 ë¬¸ì„œ ì°¸ê³ 
+	*/
+#pragma region ConnectedJointNumber
+	if (jointNumber == 0){
+		//SPIN_BASE	
+		connectedJointNumbers.push_back(1);
+		connectedJointNumbers.push_back(12);
+		connectedJointNumbers.push_back(16);		
+	}
+	else if (jointNumber == 1){
+		//SPINE_MID
+		connectedJointNumbers.push_back(0);
+		connectedJointNumbers.push_back(20);
+	}
+	else if (jointNumber == 2){
+		//NECT
+		connectedJointNumbers.push_back(3);
+		connectedJointNumbers.push_back(20);
+	}
+	else if (jointNumber == 3){
+		//HEAD
+		connectedJointNumbers.push_back(2);
+	}
+	else if (jointNumber == 4){
+		//SHOULDER_LEFT
+		connectedJointNumbers.push_back(9);
+		connectedJointNumbers.push_back(20);
+	}
+	else if (jointNumber == 5){
+		//ELBOW_LEFT
+		connectedJointNumbers.push_back(4); 
+		connectedJointNumbers.push_back(6);
+	}
+	else if (jointNumber == 6){
+		//WRIST_LEFT
+		connectedJointNumbers.push_back(5);
+		connectedJointNumbers.push_back(7);
+	}
+	else if (jointNumber == 7){
+		//HAND_LEFT
+		connectedJointNumbers.push_back(6);
+		connectedJointNumbers.push_back(21);
+		connectedJointNumbers.push_back(22);		
+	}
+	else if (jointNumber == 8){
+		//SHOULDER_RIGHT
+		connectedJointNumbers.push_back(5);
+		connectedJointNumbers.push_back(9);
+	}
+	else if (jointNumber == 9){
+		//ELBOW_RIGHT
+		connectedJointNumbers.push_back(8);
+		connectedJointNumbers.push_back(10);
+	}
+	else if (jointNumber == 10){
+		//WRIST_RIGHT
+		connectedJointNumbers.push_back(9);
+		connectedJointNumbers.push_back(11);
+	}
+	else if (jointNumber == 11){
+		//HAND_RIGHT
+		connectedJointNumbers.push_back(10);
+		connectedJointNumbers.push_back(23);
+		connectedJointNumbers.push_back(24);
+	}
+	else if (jointNumber == 12){
+		//HIP_LEFT
+		connectedJointNumbers.push_back(0);
+		connectedJointNumbers.push_back(13);
+	}
+	else if (jointNumber == 13){
+		//KNEE_LEFT
+		connectedJointNumbers.push_back(12);
+		connectedJointNumbers.push_back(14);
+	}
+	else if (jointNumber == 14){
+		//ANKLE_LEFT
+		connectedJointNumbers.push_back(13);
+		connectedJointNumbers.push_back(15);
+	}
+	else if (jointNumber == 15){
+		//FOOT_LEFT
+		connectedJointNumbers.push_back(14);
+	}
+	else if (jointNumber == 16){
+		//HIP_RIGHT
+		connectedJointNumbers.push_back(0);
+		connectedJointNumbers.push_back(17);
+	}
+	else if (jointNumber == 17){
+		//KNEE_RIGHT
+		connectedJointNumbers.push_back(16);
+		connectedJointNumbers.push_back(18);
+	}
+	else if (jointNumber == 18){
+		//ANKLE_RIGHT
+		connectedJointNumbers.push_back(17);
+		connectedJointNumbers.push_back(19);
+	}
+	else if (jointNumber == 19){
+		//FOOT_RIGHT
+		connectedJointNumbers.push_back(18);		
+	}
+	else if (jointNumber == 20){
+		//SPINE_SHOULDER
+		connectedJointNumbers.push_back(1);
+		connectedJointNumbers.push_back(2);
+		connectedJointNumbers.push_back(4);
+		connectedJointNumbers.push_back(8);
+	}
+	else if (jointNumber == 21){
+		//HAND_TIP_LEFT
+		connectedJointNumbers.push_back(7);
+	}
+	else if (jointNumber == 22){
+		//THUMB_LEFT
+		connectedJointNumbers.push_back(7);
+	}
+	else if (jointNumber == 23){
+		//HAND_TIP_RIGHT
+		connectedJointNumbers.push_back(11);
+	}
+	else if (jointNumber == 24){
+		//THUMB_RIGHT
+		connectedJointNumbers.push_back(11);
+	}
+	else{		
+		printf("Joint ë²ˆí˜¸ê°€ ì˜ëª»ë¨\n");		
+	}
+#pragma endregion
+
+
+	vector<vector<Point2i>> table;
+	table.assign(connectedJointNumbers.size(), vector<Point2i>());
+	
+	for (int i = 0; i < connectedJointNumbers.size(); i++){
+		//í˜„ì¬ ì¤‘ì‹¬ì˜ jointNumberì™€ ê·¸ ì£¼ë³€ì— ìˆëŠ” jointê°„ì˜ ë¼ì¸ì„ ì–»ì–´ì˜¨ë‹¤
+		table[i] = getLineFromTwoPoint(skeletonJointPosition[jointNumber], skeletonJointPosition[connectedJointNumbers[i]]);
+	}		
+	
+	//ë©”ëª¨ë¡œ í•´ì œ ë°©ì‹ ì˜ˆì œ
+	//vector<int>().swap(vecA);
+
+	return table;
+}
+
+
+void createSkeletonData(BYTE**& skeletonDatasMap, int frameNumber, Point2i** skeletonDatas_origin, Point2i** skeletonDatas_hd){
+	/*
+	skeletonDatas_origin(í•´ìƒë„ 512x424)ì˜ skeleton jointë“¤ì˜ ê°’ìœ¼ë¡œë¶€í„°
+	skeletonDatas_hd(í•´ìƒë„ 1920x1080)ì˜ ì •ë³´ë¡œ ë§Œë“¤ë©´ì„œ, ê° jointsë“¤ì„ ì¤„ë¡œ ì—°ê²°í•œë‹¤.
+	*/
+	//ë©”ëª¨ë¦¬ í• ë‹¹ ë° ì´ˆê¸°í™”
+	skeletonDatasMap = new BYTE*[kTotal_BodyIndex];
 	for (int i = 0; i < kTotal_BodyIndex; i++){
 		skeletonDatasMap[i] = new BYTE[IMAGE_HEIGHT * IMAGE_WIDTH];
 	}		
@@ -555,40 +1129,83 @@ BYTE** createSkeletonData(int frameNumber, Point2i** skeletonDatas_origin){
 		}
 	}
 
-	//Mapping Á¤º¸¸¦ ´ã°í ÀÖ´Â Data·Îµå
-	short* mappingDats = loadMappingFile(frameNumber);
+	//Mapping ì •ë³´ë¥¼ ë‹´ê³  ìˆëŠ” Dataë¡œë“œ
+	short* mappingDats;
+	loadMappingFile(mappingDats, frameNumber);
 
 	for (int i = 0; i < kTotal_BodyIndex; i++){
 
 		if (isBody[i]){
-			Point2i* skeletonDatas_hd = new Point2i[kJointFromKinectV2];
+			
 			for (int j = 0; j < kJointFromKinectV2; j++){
-				skeletonDatas_hd[j] = mappingLowToHigh(skeletonDatas_origin[i][j], mappingDats);
-				printf("%d = %d %d\n", i, skeletonDatas_hd[j].x, skeletonDatas_hd[j].y);
+				skeletonDatas_hd[i][j] = mappingLowToHigh(skeletonDatas_origin[i][j], mappingDats);
+				//printf("%d = %d %d\n", i, skeletonDatas_hd[i][j].x, skeletonDatas_hd[i][j].y);
 			}
 
-			CreateSkeletonLines(skeletonDatas_hd, IMAGE_WIDTH, IMAGE_HEIGHT, 1, skeletonDatasMap[i]);			
-			delete[] skeletonDatas_hd;
+			CreateSkeletonLines(skeletonDatas_hd[i], IMAGE_WIDTH, IMAGE_HEIGHT, 1, skeletonDatasMap[i]);			
+		
 		}
 	}
 
 	delete[] mappingDats;
-	return skeletonDatasMap;
+	//return skeletonDatasMap;
 }
 
-Mat* createSkeletonWeightMap(int frame, BYTE** skeletonDatas){
+//double** createSkeletonWeightMap(int frame, Point2i** skeletonDatas_hd, ushort** distanceMaps){
+void createSkeletonWeightMap(double**& skeletonMaps, int frame, Point2i** skeletonDatas_hd, Mat* distanceMaps, int head_sigma, int foot_sigma, int sigma, int weight){
 	/*
-	Skeleton LinesÀ» ÀÌ¿ëÇÏ¿© ÇØ´ç ÇÈ¼¿ ÁÖº¯¿¡ °¡¿ì½Ã¾È ÇÔ¼ö¸¦ ÅëÇØ °Å¸®°¡ ¸Ö¾îÁú ¼ö·Ï weight °ªÀÌ Á¡Á¡ ³·¾ÆÁö´Â weight map »ı¼º
-	¾Æ·¡ ¼ö½ÄÀº °¡¿ì½Ã¾È ÇÔ¼öÀÇ ±âº» ÇÔ¼ö¸¦ °¡Á®´Ù »ç¿ëÇßÀ¸¸ç,
-	xÃàÀ¸·Î ÇÑ¹ø yÃàÀ¸·Î ÇÑ¹ø µÎ ¹ø »ç¿ëÇÑ´Ù.
-	sigma´Â °¡¿ì½Ã¾È ÇÔ¼ö°¡ ÆÛÁö´Â Á¤µµ¸¦ Á¶ÀıÇÏ¸ç, range´Â ÇÈ¼¿ »óÀ¸·Î ¾î´À Á¤µµÀÇ ¹üÀ§ÀÇ ÇÈ¼¿±îÁö weightÀ» ¹ŞÀ» Áö¸¦ °áÁ¤ÇÑ´Ù.
+	Skeleton Linesì„ ì´ìš©í•˜ì—¬ í•´ë‹¹ í”½ì…€ ì£¼ë³€ì— ê°€ìš°ì‹œì•ˆ í•¨ìˆ˜ë¥¼ í†µí•´ ê±°ë¦¬ê°€ ë©€ì–´ì§ˆ ìˆ˜ë¡ weight ê°’ì´ ì ì  ë‚®ì•„ì§€ëŠ” weight map ìƒì„±
+	ì•„ë˜ ìˆ˜ì‹ì€ ê°€ìš°ì‹œì•ˆ í•¨ìˆ˜ì˜ ê¸°ë³¸ í•¨ìˆ˜ë¥¼ ê°€ì ¸ë‹¤ ì‚¬ìš©í–ˆìœ¼ë©°,
+	xì¶•ìœ¼ë¡œ í•œë²ˆ yì¶•ìœ¼ë¡œ í•œë²ˆ ë‘ ë²ˆ ì‚¬ìš©í•œë‹¤.
+	sigmaëŠ” ê°€ìš°ì‹œì•ˆ í•¨ìˆ˜ê°€ í¼ì§€ëŠ” ì •ë„ë¥¼ ì¡°ì ˆí•˜ë©°, rangeëŠ” í”½ì…€ ìƒìœ¼ë¡œ ì–´ëŠ ì •ë„ì˜ ë²”ìœ„ì˜ í”½ì…€ê¹Œì§€ weightì„ ë°›ì„ ì§€ë¥¼ ê²°ì •í•œë‹¤.
 	*/
-	Mat* skeletonMaps = new Mat[kTotal_BodyIndex];
+	skeletonMaps = new double*[kTotal_BodyIndex];
 	for (int i = 0; i < kTotal_BodyIndex; i++){
-		skeletonMaps[i] = Mat(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, Scalar(0));
+		skeletonMaps[i] = new double[IMAGE_HEIGHT * IMAGE_WIDTH];		
 	}
 
+	/*
+	joints ë¶€ìœ„ë³„ë¡œ sigma ê°’ì„ ë‹¤ë¥´ê²Œ ì„¤ì •í•´ì•¼ í•  í•„ìš”ê°€ ìˆì„ ìˆ˜ ìˆê¸° ë•Œë¬¸ì— ì •ì˜
+	*/
 
+	double jointsSigma[kJointFromKinectV2];
+	for (int j = 0; j < kJointFromKinectV2; j++){
+		jointsSigma[j] = sigma;
+	}
+	//HEAD
+	jointsSigma[3] = head_sigma;
+	//FOOT_LEFT
+	jointsSigma[15] = foot_sigma;
+	//FOOT_RIGHT
+	jointsSigma[19] = foot_sigma;
+
+
+
+
+	for (int i = 0; i < kTotal_BodyIndex; i++){
+
+		if (isBody[i]){
+			for (int row = 0; row < IMAGE_HEIGHT; row++){
+				for (int col = 0; col < IMAGE_WIDTH; col++){
+					Point2i pos = Point2i(col, row);
+					int jointNumber = getCloestJointNumber(pos, skeletonDatas_hd[i]);
+
+					double sigma = jointsSigma[jointNumber];
+					float distance = distanceMaps[i].at<float>(row, col);
+					//const float K = (1.0 / (sqrt(2 * PIE * powf(sigma, 2))));
+					const float K = 1.0f;
+
+					double gaussian_weight =  K *  exp(-1.0 * (powf(distance, 2) / (2.0 * powf(sigma, 2))));
+
+					skeletonMaps[i][row * IMAGE_WIDTH + col] = gaussian_weight / (double)weight;
+					//if (distance == 0)
+					//printf("%f  ", gaussian_weight);
+				}
+			}
+		}
+	}
+
+	/*
 	double sigma = 20.0;
 	const int range = 100;
 
@@ -596,24 +1213,24 @@ Mat* createSkeletonWeightMap(int frame, BYTE** skeletonDatas){
 		for (int col = 0; col < IMAGE_WIDTH; col++){
 
 			for (int i = 0; i < kTotal_BodyIndex; i++){
-				//ÇöÀç À§Ä¡¿¡ skeleton Á¤º¸°¡ ÀÖÀ» ¶§,
+				//í˜„ì¬ ìœ„ì¹˜ì— skeleton ì •ë³´ê°€ ìˆì„ ë•Œ,
 				if (skeletonDatas[i][row * IMAGE_WIDTH + col] == 1){
 
-					//xÃàÀ¸·Î ÁøÇà
+					//xì¶•ìœ¼ë¡œ ì§„í–‰
 					for (int offset = -1 * range; offset <= range; offset++){
 						if (col + offset >= 0 && col + offset < IMAGE_WIDTH){
 							double weight = (1.0 / (sqrt(2 * PIE) * sigma) * exp((-1.0 * (powf(offset, 2)) / (2.0 * powf(sigma, 2)))));
 							weight *= 500;
 
-							//°è»êµÈ weight°¡ ÇöÀç pixelÀÌ °¡Áö°í ÀÖ´Â weightº¸´Ù ³ôÀ» ¶§¸¸ weight¸¦ ¼³Á¤ÇÑ´Ù.
-							//Skeleton LineÀº 1°³ÀÇ ÇÈ¼¼ ¶óÀÎÀÌ ¾Æ´Ï¶ó µÎ²²°¡ ÀÖ±â ¶§¹®¿¡
+							//ê³„ì‚°ëœ weightê°€ í˜„ì¬ pixelì´ ê°€ì§€ê³  ìˆëŠ” weightë³´ë‹¤ ë†’ì„ ë•Œë§Œ weightë¥¼ ì„¤ì •í•œë‹¤.
+							//Skeleton Lineì€ 1ê°œì˜ í”½ì„¸ ë¼ì¸ì´ ì•„ë‹ˆë¼ ë‘ê»˜ê°€ ìˆê¸° ë•Œë¬¸ì—
 							if (weight >= skeletonMaps[i].at<uchar>(row, col + offset))
 								skeletonMaps[i].at<uchar>(row, col + offset) = weight;
 
 						}
 					}
 
-					//yÃàÀ¸·Î ÁøÇà
+					//yì¶•ìœ¼ë¡œ ì§„í–‰
 					for (int offset = -1 * range; offset <= range; offset++){
 						if (row + offset >= 0 && row + offset < IMAGE_HEIGHT){
 							double weight = (1.0 / (sqrt(2 * PIE) * sigma) * exp((-1.0 * (powf(offset, 2)) / (2.0 * powf(sigma, 2)))));
@@ -629,19 +1246,15 @@ Mat* createSkeletonWeightMap(int frame, BYTE** skeletonDatas){
 			}
 		}
 	}
-
-	for (int i = 0; i < kTotal_BodyIndex; i++){
-		std::string skeletonFilePath = filePath::getInstance()->getResultPath() + "skeleton" + to_string(frame) + "_" + to_string(i) + ".jpg";
-		imwrite(skeletonFilePath.c_str(), skeletonMaps[i]);
-	}
-
-	return skeletonMaps;
+	*/
+	
+	//return skeletonMaps;
 }
 
 void CreateSkeletonLines(Point2i* jointPoints, int width, int height, int stroke, BYTE* skeletonMap){
 	/*
-	jointº°·Î ¿¬°áÇÏ´Â ºÎºĞ, joint °íÀ¯¹øÈ£´Â kinectv2¹®¼­ Âü°í
-	¸Ó¸®-¸ñ µî
+	jointë³„ë¡œ ì—°ê²°í•˜ëŠ” ë¶€ë¶„, joint ê³ ìœ ë²ˆí˜¸ëŠ” kinectv2ë¬¸ì„œ ì°¸ê³ 
+	ë¨¸ë¦¬-ëª© ë“±
 	*/
 	//SPINE_BASE - SPINE_MID
 	drawLineBy(jointPoints[0], jointPoints[1], width, height, stroke, skeletonMap);
@@ -695,11 +1308,13 @@ void CreateSkeletonLines(Point2i* jointPoints, int width, int height, int stroke
 
 
 
+
+
 Point2i mappingLowToHigh(Point2i point, short* mappingData){
 	/*
-	NOTE: loadMappingFileÇÔ¼ö ¼³¸í Âü°í
-	9999°ªÀº kinect¿¡¼­ Àß¸øµÈ °ª(Áï ÃßÀûÀ» ÇÏÁö ¸øÇÏ¿©)À» ÁÖ¾úÀ» ¶§ ³ª¿À´Â °ª
-	ÀÌ °ªÀÏ ¶§¿¡´Â -1ÀÇ °ªÀ¸·Î x, y°ªÀ» ÀúÀåÇÏ¿© ÀÌÈÄ¿¡ °úÁ¤¿¡¼­ Á¦¿ÜÇÏµµ·Ï ¿¹¿ÜÃ³¸® ÇÔ.
+	NOTE: loadMappingFileí•¨ìˆ˜ ì„¤ëª… ì°¸ê³ 
+	9999ê°’ì€ kinectì—ì„œ ì˜ëª»ëœ ê°’(ì¦‰ ì¶”ì ì„ í•˜ì§€ ëª»í•˜ì—¬)ì„ ì£¼ì—ˆì„ ë•Œ ë‚˜ì˜¤ëŠ” ê°’
+	ì´ ê°’ì¼ ë•Œì—ëŠ” -1ì˜ ê°’ìœ¼ë¡œ x, yê°’ì„ ì €ì¥í•˜ì—¬ ì´í›„ì— ê³¼ì •ì—ì„œ ì œì™¸í•˜ë„ë¡ ì˜ˆì™¸ì²˜ë¦¬ í•¨.
 	*/
 	Point2i pos;
 	if (point.x == 9999) pos.x = -1;
@@ -719,7 +1334,7 @@ Point2i mappingLowToHigh(Point2i point, short* mappingData){
 
 void expandPixelBy(int x, int y, int width, int height, int stroke, BYTE* skeletonDatas){
 	/*
-	stroke°ªÀ¸·Î ÇØ´ç À§Ä¡ÀÇ line µÎ²² Á¶Àı
+	strokeê°’ìœ¼ë¡œ í•´ë‹¹ ìœ„ì¹˜ì˜ line ë‘ê»˜ ì¡°ì ˆ
 	*/
 	int offset = stroke / 2;
 	if (offset < 0) offset = 0;
@@ -736,92 +1351,128 @@ void expandPixelBy(int x, int y, int width, int height, int stroke, BYTE* skelet
 	}
 }
 
-void drawLineBy(Point2i start, Point2i end, int width, int height, int stroke, BYTE* skeletonDatas){
+
+vector<Point2i> getLineFromTwoPoint(Point2i point1, Point2i point2){
 	/*
-	µÎ Á¡ÀÇ ±â¿ï±â¸¦ ±¸ÇÑ µÚ, Á÷¼±ÀÇ ¹æÁ¤½ÄÀ» ±¸ÇÏ°í ±× ¹æÁ¤½Ä¿¡ ÀÖ´Â ¸ğµç ÇÈ¼¿µéÀ» Ä¥ÇÏ¿© skeleton lineÀ» ¸¸µå´Â ÇÔ¼ö
-	start¿Íend·Î ±â¿ï±â¸¦ ±¸ÇÏ°í, stroke·Î lineÀÇ µÎ²²¸¦ Á¤ÇÑ´Ù.
+	ë‘ ì ì„ ì‡ëŠ” Lineì„ ë§Œë“¤ê³  ê±°ê¸°ì— ë“¤ì–´ê°€ëŠ” ëª¨ë“  pixelsì˜ ì¢Œí‘œë¥¼ ì €ì¥í•´ì„œ ë¦¬í„´í•˜ëŠ” í•¨ìˆ˜
 	*/
-	if (start.x == -1 && start.y == -1) return;
-	double x1 = start.x;
-	double y1 = start.y;
+	
+	vector<Point2i> line;
 
-	if (end.x == -1 && end.y == -1) return;
-	double x2 = end.x;
-	double y2 = end.y;
+	if (point1.x == -1 && point1.y == -1) return line;
+	if (point2.x == -1 && point2.y == -1) return line;				
+	
+	int start, end;
 
-
-	int s, e;
-	if (x1 == x2){
-		if (y1 >= y2){
-			s = y2;
-			e = y1;
-		}
-		else {
-			s = y1;
-			e = y2;
-		}
-
-		for (int y = s; y <= e; y++){
-			//skeletonDatas[y * IMAGE_WIDTH + (int)x1] = 1;
-			expandPixelBy(x1, y, width, height, stroke, skeletonDatas);
-		}
-	}
-	else if (y1 == y2){
-		if (x1 >= x2){
-			s = x2;
-			e = x1;
-		}
-		else {
-			s = x1;
-			e = x2;
-		}
-
-		for (int x = s; x <= e; x++){
-			//skeletonDatas[(int)y1 * IMAGE_WIDTH + x] = 1;
-			expandPixelBy(x, y1, width, height, stroke, skeletonDatas);
-		}
-	}
-	else{
-		float m = (y2 - y1) / (x2 - x1);
-
-		if (abs(x2 - x1) >= abs(y2 - y1)) {
-			if (x1 >= x2){
-				s = x2;
-				e = x1;
-			}
-			else {
-				s = x1;
-				e = x2;
-			}
-			for (int x = s; x <= e; x++){
-				int y = (int)(m * (x - x1) + y1 + 0.5);
-				//skeletonDatas[y * IMAGE_WIDTH + x] = 1;
-				expandPixelBy(x, y, width, height, stroke, skeletonDatas);
-			}
+	//3ê°€ì§€ ê²½ìš°ë¥¼ ìƒê°í•¨
+	//1 : xì¢Œí‘œê°€ ê°™ì€ ê²½ìš°
+	if (point1.x == point2.x){
+		if (point1.y == point2.y) return line;
+				
+		if (point1.y > point2.y){
+			start = point2.y;
+			end = point1.y;
 		}
 		else{
-			if (y1 >= y2){
-				s = y2;
-				e = y1;
+			start = point1.y;
+			end = point2.y;
+		}		
+
+		for (int i = 0; i <= end - start; i++){
+			Point2i pos = Point2i(point1.x, start + i);
+			line.push_back(pos);
+		}
+
+		return line;		
+	}
+	//2 : yì¢Œí‘œê°€ ê°™ì€ ê²½ìš°
+	else if (point1.y == point2.y){
+		if (point1.x == point2.x) return line;
+
+		if (point1.x > point2.x){
+			start = point2.x;
+			end = point1.x;
+		}
+		else{
+			start = point1.x;
+			end = point2.x;
+		}
+
+		for (int i = 0; i <= end - start; i++){
+			Point2i pos = Point2i(start + i, point1.y);
+			line.push_back(pos);
+		}
+
+		return line;
+	}
+	//3 : x, y ëª¨ë‘ ë‹¤ë¥¸ ê²½ìš°
+	else{
+		//ê¸°ìš¸ê¸° ê³„ì‚°
+		double m = (double)(point2.y - point1.y) / (point2.x - point1.x);
+
+		/*
+		ìƒ‰ì¹ ì„ í•  ë•Œ, xì¶•ìœ¼ë¡œ ì§„í–‰í•˜ë©´ì„œ ì¢Œí‘œë¥¼ ì €ì¥ í•  ìˆ˜ë„ ìˆê³ , yì¶•ìœ¼ë¡œ ì§„í–‰í•˜ë©´ì„œ point ì¢Œí‘œë¥¼ ì €ì¥í•  ìˆ˜ë„ ìˆìŒ.
+		í•˜ì§€ë§Œ, ê±°ë¦¬ê°€ ì§§ì€ ìª½ì„ ê¸°ì¤€ìœ¼ë¡œ ì§„í–‰í•˜ë©´ì„œ ì €ì¥ì„ í•˜ë©´ lineì„ êµ¬ì„±í•˜ëŠ” í”½ì…€ì´ ì „ë¶€ ë‹¤ ì €ì¥ì´ ì•ˆë˜ëŠ” ê²½ìš° ë°œìƒ.
+		ë”°ë¼ì„œ, xê°„ ê±°ë¦¬, yê°„ ê±°ë¦¬ë¥¼ ë¹„êµí•˜ì—¬ ê±°ë¦¬ê°€ ê¸´ìª½ì„ ê¸°ì¤€ìœ¼ë¡œ pointë¥¼ ì €ì¥
+		*/
+		
+		if (abs(point2.x - point1.x) >= abs(point2.y - point1.y)){
+			if (point1.x >= point2.x){
+				start = point2.x;
+				end = point1.x;
 			}
-			else {
-				s = y1;
-				e = y2;
+			else{
+				start = point1.x;
+				end = point2.x;
 			}
-			for (int y = s; y <= e; y++){
-				int x = (int)((y - y1) * (1 / m) + x1 + 0.5);
-				//skeletonDatas[y * IMAGE_WIDTH + x] = 1;
-				expandPixelBy(x, y, width, height, stroke, skeletonDatas);
+		
+			for (int i = 0; i <= end - start; i++){
+				int y = (int)(m * (start + i - point1.x) + point1.y + 0.5);
+				Point2i pos = Point2i(start + i, y);
+				line.push_back(pos);					
 			}
+
+			return line;
+		}
+		else{
+			if (point1.y >= point2.y){
+				start = point2.y;
+				end = point1.y;
+			}
+			else{
+				start = point1.y;
+				end = point2.y;
+			}		
+
+			for (int i = 0; i <= end - start; i++){				
+				int x = (int)((start + i - point1.y) * (1 / m) +point1.x + 0.5);
+				Point2i pos = Point2i(x, start + i);
+				line.push_back(pos);				
+			}
+
+			return line;
 		}
 	}
+}
 
+void drawLineBy(Point2i start, Point2i end, int width, int height, int stroke, BYTE* skeletonDatas){
+	/*
+	ë‘ ì ì˜ ê¸°ìš¸ê¸°ë¥¼ êµ¬í•œ ë’¤, ì§ì„ ì˜ ë°©ì •ì‹ì„ êµ¬í•˜ê³  ê·¸ ë°©ì •ì‹ì— ìˆëŠ” ëª¨ë“  í”½ì…€ë“¤ì„ ì¹ í•˜ì—¬ skeleton lineì„ ë§Œë“œëŠ” í•¨ìˆ˜
+	startì™€endë¡œ ê¸°ìš¸ê¸°ë¥¼ êµ¬í•˜ê³ , strokeë¡œ lineì˜ ë‘ê»˜ë¥¼ ì •í•œë‹¤.
+	*/
+
+
+	vector<Point2i> line = getLineFromTwoPoint(start, end);
+	for (int i = 0; i < line.size(); i++)
+	{
+		expandPixelBy(line[i].x, line[i].y, width, height, stroke, skeletonDatas);
+	}
 }
 
 const char* getfield(char* line, int num)
 {
 	/*
-	csvÀ» ÇÑÁÙÀ» ÀĞ¾î¿À¸é ±× °ªÀ» ºĞ¸®ÇÏ´Â ÇÔ¼ö
+	csvì„ í•œì¤„ì„ ì½ì–´ì˜¤ë©´ ê·¸ ê°’ì„ ë¶„ë¦¬í•˜ëŠ” í•¨ìˆ˜
 	*/
 	const char* tok;
 	for (tok = strtok(line, ",");
@@ -833,3 +1484,27 @@ const char* getfield(char* line, int num)
 	}
 	return NULL;
 }
+
+int getL1DistanceTwoPoint(Point2i left, Point2i right){
+	int distance;
+	return distance = abs(left.x - right.x) + abs(left.y - right.y);
+}
+double getEuclideanDistanceTwoPoint(Point2i left, Point2i right){
+	double distance;
+	return sqrt(pow(left.x - right.x, 2) + pow(left.y - right.y, 2));
+}
+
+int getCloestJointNumber(Point2i point, Point2i* skeletonJointPosition){
+	int number = 0;
+	ushort tmp = 65535;
+	for (int j = 0; j < kJointFromKinectV2; j++){
+		ushort distance = getL1DistanceTwoPoint(point, skeletonJointPosition[j]);
+		if (tmp > distance){
+			number = j;
+			tmp = distance;
+		}
+	}
+
+	return number;
+}
+

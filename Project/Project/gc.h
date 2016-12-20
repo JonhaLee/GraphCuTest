@@ -12,7 +12,7 @@ namespace my{
 		void graphCut(InputArray _img, InputOutputArray _mask, Rect rect,
 			InputOutputArray _bgdModel, InputOutputArray _fgdModel,
 			int iterCount, int mode,
-			Mat& skeletonMap);
+			double* weightMaps);
 	};
 
 	class GMM

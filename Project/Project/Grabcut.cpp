@@ -572,8 +572,6 @@ void cv::grabCut(InputArray _img, InputOutputArray _mask, Rect rect,
 		constructGCGraph(img, mask, bgdGMM, fgdGMM, lambda, leftW, upleftW, upW, uprightW, graph);
 		estimateSegmentation(graph, mask);
 	}
-
-	printf("그래프컷 끝");
 }
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////

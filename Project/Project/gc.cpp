@@ -362,7 +362,7 @@ Construct GCGraph
 */
 static void constructGCGraph(const Mat& img, const Mat& mask, const my::GMM& bgdGMM, const my::GMM& fgdGMM, double lambda,
 	const Mat& leftW, const Mat& upleftW, const Mat& upW, const Mat& uprightW,
-	GCGraph<double>& graph, Mat& skeletonMap)
+	GCGraph<double>& graph, double* weightMaps)
 {
 	int vtxCount = img.cols*img.rows,
 		edgeCount = 2 * (4 * img.cols*img.rows - 3 * (img.cols + img.rows) + 2);
@@ -375,15 +375,15 @@ static void constructGCGraph(const Mat& img, const Mat& mask, const my::GMM& bgd
 			// add node
 			int vtxIdx = graph.addVtx();
 			Vec3b color = img.at<Vec3b>(p);
-
-			double s_weight = skeletonMap.at<uchar>(p) / (double)10;
+			
+			double s_weight = weightMaps[p.y * 1920 + p.x];
 
 			// set t-weights
 			double fromSource, toSink;
 			if (mask.at<uchar>(p) == GC_PR_BGD || mask.at<uchar>(p) == GC_PR_FGD)
 			{
-				fromSource = -log(bgdGMM(color)) *s_weight;
-				toSink = -log(fgdGMM(color)) *(1 - s_weight);
+				fromSource = -log(bgdGMM(color)) - log(1 - s_weight);
+				toSink = -log(fgdGMM(color)) - log(s_weight);
 			}
 			else if (mask.at<uchar>(p) == GC_BGD)
 			{
@@ -450,7 +450,7 @@ my::GraphCut::GraphCut(){
 void my::GraphCut::graphCut(InputArray _img, InputOutputArray _mask, Rect rect,
 	InputOutputArray _bgdModel, InputOutputArray _fgdModel,
 	int iterCount, int mode,
-	Mat& skeletonMap)
+	double* weightMaps)
 {
 	Mat img = _img.getMat();
 	Mat& mask = _mask.getMatRef();
@@ -492,7 +492,7 @@ void my::GraphCut::graphCut(InputArray _img, InputOutputArray _mask, Rect rect,
 		GCGraph<double> graph;
 		assignGMMsComponents(img, mask, bgdGMM, fgdGMM, compIdxs);
 		learnGMMs(img, mask, compIdxs, bgdGMM, fgdGMM);
-		constructGCGraph(img, mask, bgdGMM, fgdGMM, lambda, leftW, upleftW, upW, uprightW, graph, skeletonMap);
+		constructGCGraph(img, mask, bgdGMM, fgdGMM, lambda, leftW, upleftW, upW, uprightW, graph, weightMaps);
 		estimateSegmentation(graph, mask);
-	}
+	}	
 }
